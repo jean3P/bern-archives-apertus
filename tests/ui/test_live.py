@@ -103,6 +103,15 @@ def test_mode_change_and_request_start_clear_visible_results():
     assert banner == app.LIVE_BANNER and status.value == "Working…" and not text and not source
 
 
+def test_number_component_does_not_round_fractional_scope_before_validation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app.service, "answer_question", lambda *args: calls.append(args))
+    supplied = app.transcription_id.preprocess(16.5)
+    assert supplied == 16.5
+    _, status, text, source = app.on_ask("q", supplied, mode="live")
+    assert not calls and "Error" in status.value and not text and not source
+
+
 def test_existing_demo_path_never_calls_live_service():
     banner, status, text, source = app.on_ask("ignored fixture input", None, mode="demo")
     assert banner == app.DEMO_BANNER and "Answered" in status.value and "Hörndli" in text

@@ -143,7 +143,7 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
 
     mode = gr.Radio(choices=["live", "demo"], value="live", label="Mode")
     question = gr.Textbox(label="Your question")
-    transcription_id = gr.Number(label="Transcription ID (optional)", precision=0)
+    transcription_id = gr.Number(label="Transcription ID (optional)", precision=None)
     scenario = gr.Dropdown(
         choices=["answered", "insufficient", "error"],
         value="answered",
