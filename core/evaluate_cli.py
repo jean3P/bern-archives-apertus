@@ -15,6 +15,9 @@ def main():
     run.add_argument("--split", choices=("development", "evaluation"), required=True)
     run.add_argument("--data-dir", type=Path, required=True)
     run.add_argument("--out", type=Path, required=True)
+    run.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"), default="apertus",
+                     help="Baseline/parts use at most three POSTs; hybrid at most four; each has one retry")
+    run.add_argument("--retrieval-mode", choices=("standard", "entity", "coverage", "bound"), default="standard")
     review = run.add_mutually_exclusive_group()
     review.add_argument("--allow-draft-references", action="store_true", help="Diagnostic only, not human-approved gold")
     review.add_argument("--reviewed-by", help="Use only after this person reviewed this exact reference snapshot; records an attestation")
@@ -27,7 +30,8 @@ def main():
     try:
         if args.command == "run":
             metrics = run_evaluation(args.references, args.split, args.data_dir, args.out,
-                allow_draft=args.allow_draft_references, reviewed_by=args.reviewed_by)
+                allow_draft=args.allow_draft_references, reviewed_by=args.reviewed_by,
+                pipeline=args.pipeline, retrieval_mode=args.retrieval_mode)
         else:
             metrics = score_evaluation(args.run, args.out, reviews=args.reviews,
                                        document_reviews=args.document_reviews)

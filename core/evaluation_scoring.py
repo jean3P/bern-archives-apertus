@@ -16,9 +16,9 @@ def accepted_ids(case, reference, aliases):
     return {"stapfer:answer:" + str(value) for value in values}
 
 
-def inspect_case(case, directory, observation, aliases, authority):
+def inspect_case(case, directory, observation, aliases, authority, *, pipeline="apertus"):
     try:
-        return _inspect_case(case, directory, observation, aliases, authority)
+        return _inspect_case(case, directory, observation, aliases, authority, pipeline=pipeline)
     except (ValueError, TypeError, KeyError, OSError, AttributeError) as error:
         # A broken receipt is a failed observation, never an omitted question.
         return {"case_id": case["case_id"], "topic": case["topic"], "input": dict(case["input"]),
@@ -34,7 +34,7 @@ def inspect_case(case, directory, observation, aliases, authority):
                 "observation": observation, "inspection_error": type(error).__name__})}
 
 
-def _inspect_case(case, directory, observation, aliases, authority):
+def _inspect_case(case, directory, observation, aliases, authority, *, pipeline="apertus"):
     """Inspect existing receipts only. Semantic correctness always starts pending."""
     receipt_hashes = {path.name: digest(path) for path in sorted(directory.iterdir()) if path.is_file()} if directory.exists() else {}
     def saved(name, default):
@@ -45,7 +45,10 @@ def _inspect_case(case, directory, observation, aliases, authority):
     events = read_jsonl(directory / "events.jsonl") if "events.jsonl" in receipt_hashes else []
     requests = [event for event in events if event.get("event") == "generation_request"]
     calls, repairs = summary.get("generation_posts_attempted"), summary.get("format_retries")
-    budget_valid = (not attempted or (type(calls) is int and 0 <= calls <= 3 and calls == len(requests)
+    if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
+        raise ValueError("Unknown inspection pipeline")
+    cap = 4 if pipeline == "qwen-apertus" else 3
+    budget_valid = (not attempted or (type(calls) is int and 0 <= calls <= cap and calls == len(requests)
         and type(repairs) is int and 0 <= repairs <= 1))
     if not attempted:
         calls, repairs = 0, 0
@@ -65,6 +68,10 @@ def _inspect_case(case, directory, observation, aliases, authority):
         and "response.json" in receipt_hashes and "summary.json" in receipt_hashes
         and isinstance(response, dict) and observation.get("response") == response
         and summary.get("status") == response.get("status")))
+    if attempted and pipeline == "qwen-apertus":
+        protocol_valid = protocol_valid and hybrid_receipts_valid(saved, events, delivered=None)
+    if attempted and pipeline == "apertus-facets":
+        protocol_valid = protocol_valid and parts_receipts_valid(saved, events, delivered=None)
     status = response.get("status", "error") if isinstance(response, dict) else "not_run"
     cards = saved("retrieved_sources.json", [])
     packet = saved("evidence.json", {}).get("packet", [])
@@ -76,6 +83,12 @@ def _inspect_case(case, directory, observation, aliases, authority):
             if record_id in card_map:
                 delivered[record_id] = {"record": {**card_map[record_id], **member},
                                         "delivered_passage": group["passage"]}
+    if attempted and pipeline == "qwen-apertus" and status != "error":
+        protocol_valid = protocol_valid and hybrid_receipts_valid(saved, events, delivered=delivered)
+    if attempted and pipeline == "apertus-facets" and status != "error":
+        protocol_valid = protocol_valid and parts_receipts_valid(saved, events, delivered=delivered)
+    if attempted and pipeline in ("apertus-qualified", "qwen-only"):
+        protocol_valid = protocol_valid and qualifications_receipts_valid(saved, events, delivered, pipeline=pipeline)
     claims = saved("validated_claims.json", None)
     citation_valid = None
     if status == "answered":
@@ -134,6 +147,191 @@ def _inspect_case(case, directory, observation, aliases, authority):
         "definitive_failure": definitive_failure,
         "review_binding": value_hash({"case": case, "receipts": receipt_hashes,
                                      "response": response, "attempted": attempted})}
+
+
+def qualifications_receipts_valid(saved, events, delivered, *, pipeline="apertus-qualified"):
+    from core import answer_qualifications as aq
+    if saved("input.json", {}).get("retrieval_mode") == "bound":
+        from core.answer_binding import receipts_valid
+        return (pipeline in ("apertus-qualified", "qwen-only")
+                and saved("input.json", {}).get("pipeline") == pipeline
+                and receipts_valid(saved, events, delivered))
+    if saved("input.json", {}).get("retrieval_mode") == "coverage":
+        from core.answer_coverage import receipts_valid
+        return (pipeline in ("apertus-qualified", "qwen-only")
+                and saved("input.json", {}).get("pipeline") == pipeline
+                and receipts_valid(saved, events, delivered))
+    implementation = saved("implementation.json", {})
+    version = implementation.get("version")
+    if pipeline not in ("apertus-qualified", "qwen-only"):
+        return False
+    model = aq.QWEN_MODEL if pipeline == "qwen-only" else aq.MODEL
+    versions = (aq.VERSION,) if pipeline == "qwen-only" else (aq.VERSION, aq.ORIGINAL_VERSION, aq.LEGACY_VERSION)
+    if (version not in versions or implementation.get("model") != model
+            or saved("input.json", {}).get("pipeline") != pipeline
+            or saved("summary.json", {}).get("pipeline") != pipeline):
+        return False
+    pending, answers = None, []
+    for event in events:
+        if event.get("event") == "generation_request":
+            stage, body = event.get("stage"), event.get("request", {})
+            limit = {"retrieval_plan": 180, "cited_answer": 512}.get(stage)
+            if pending is not None or limit is None or body.get("model") != model or body.get("max_tokens") != limit:
+                return False
+            pending = stage
+        elif event.get("event") == "generation_response":
+            if event.get("stage") != pending or event.get("http_status") != 200:
+                return False
+            wire = strict_loads(event["body"])
+            if wire.get("model") != model or len(wire.get("choices", [])) != 1:
+                return False
+            if wire["choices"][0].get("finish_reason") != "stop":
+                return False
+            if pending == "cited_answer":
+                answers.append(wire["choices"][0]["message"]["content"])
+            pending = None
+        elif event.get("event") == "generation_transport_error":
+            if saved("summary.json", {}).get("status") != "error" or event.get("stage") != pending:
+                return False
+            pending = None
+    if pending is not None:
+        return False
+    if saved("summary.json", {}).get("status") == "error":
+        return True
+    if saved("input.json", {}).get("retrieval_mode") == "entity":
+        from core.entity_retrieval import receipts_valid
+        if not receipts_valid(saved, events):
+            return False
+    if not delivered:
+        return not answers
+    raw = strict_loads(answers[-1])
+    return raw == saved("qualification_answer.json", None) and aq.normalize(raw, delivered, version) == saved("validated_claims.json", None)
+
+
+def parts_receipts_valid(saved, events, delivered):
+    from core import facet_answering as fa
+    from core.evidence import explicit_codes
+    request, summary, implementation = saved("input.json", {}), saved("summary.json", {}), saved("implementation.json", {})
+    if (request.get("pipeline") != "apertus-facets" or summary.get("pipeline") != "apertus-facets"
+            or implementation.get("version") != fa.VERSION
+            or implementation.get("stage_models") != {stage: fa.MODEL for stage in fa.TOKENS}
+            or implementation.get("stage_token_limits") != fa.TOKENS):
+        return False
+    pending, stages, returned = None, [], {}
+    for event in events:
+        if event.get("event") == "generation_request":
+            stage, body = event.get("stage"), event.get("request", {})
+            if (pending is not None or stage not in fa.TOKENS or body.get("model") != fa.MODEL
+                    or body.get("max_tokens") != fa.TOKENS[stage] or body.get("temperature") != 0):
+                return False
+            stages.append(stage)
+            pending = stage
+        elif event.get("event") == "generation_response":
+            if pending != event.get("stage"):
+                return False
+            if summary.get("status") != "error":
+                wire = strict_loads(event["body"])
+                if event.get("http_status") != 200 or wire.get("model") != fa.MODEL or len(wire.get("choices", [])) != 1:
+                    return False
+                choice = wire["choices"][0]
+                if choice.get("finish_reason") != "stop":
+                    return False
+                returned[pending] = choice["message"]["content"]
+            pending = None
+        elif event.get("event") == "generation_transport_error":
+            if summary.get("status") != "error" or pending != event.get("stage"):
+                return False
+            pending = None
+    order = list(fa.TOKENS)
+    retries = sum(max(0, stages.count(stage) - 1) for stage in order)
+    if pending is not None or stages != sorted(stages, key=order.index) or retries > 1:
+        return False
+    if delivered is None or summary.get("status") == "error":
+        return True
+    if retries != summary.get("format_retries"):
+        return False
+    catalogue = saved("question_catalogue.json", [])
+    parsed = strict_loads(returned["question_interpretation"])
+    fa.validate_interpretation(parsed, catalogue, request["transcription_id"] is not None,
+                               explicit_codes(request["question"], catalogue), request["question"])
+    if saved("question_interpretation.json", {}) != {"model_output": parsed, "facets": fa.bind_facets(parsed)}:
+        return False
+    if not delivered:
+        return "cited_answer" not in stages
+    parts = strict_loads(returned["cited_answer"])
+    normalized = fa.validate_parts(parts, parsed, delivered)
+    return parts == saved("part_answers.json", None) and normalized == saved("validated_claims.json", None)
+
+
+def hybrid_receipts_valid(saved, events, delivered):
+    """Replay the hybrid contract offline; no question correctness or new model calls."""
+    from core import question_evidence as qe
+    from core.evidence import explicit_codes
+    request, summary = saved("input.json", {}), saved("summary.json", {})
+    implementation = saved("implementation.json", {})
+    if (request.get("pipeline") != "qwen-apertus" or summary.get("pipeline") != "qwen-apertus"
+            or implementation.get("version") != qe.HYBRID_VERSION
+            or implementation.get("stage_models") != qe.STAGE_MODELS
+            or implementation.get("stage_token_limits") != qe.STAGE_TOKENS
+            or implementation.get("max_generation_posts") != 4
+            or implementation.get("max_shared_validation_retries") != 1):
+        return False
+    pending, stages, returned = None, [], {}
+    for event in events:
+        if event.get("event") == "generation_request":
+            stage, body = event.get("stage"), event.get("request", {})
+            if (pending is not None or stage not in qe.STAGE_MODELS
+                    or body.get("model") != qe.STAGE_MODELS[stage]
+                    or body.get("max_tokens") != qe.STAGE_TOKENS[stage] or body.get("temperature") != 0):
+                return False
+            stages.append(stage)
+            pending = stage
+        elif event.get("event") == "generation_response":
+            if pending is None or event.get("stage") != pending:
+                return False
+            if event.get("http_status") == 200:
+                wire = strict_loads(event["body"])
+                if wire.get("model") != qe.STAGE_MODELS[pending]:
+                    return False
+                choices = wire.get("choices", [])
+                if len(choices) != 1 or choices[0].get("finish_reason") != "stop":
+                    if summary.get("status") != "error":
+                        return False
+                else:
+                    returned[pending] = choices[0].get("message", {}).get("content")
+            elif summary.get("status") != "error":
+                return False
+            pending = None
+        elif event.get("event") == "generation_transport_error":
+            if event.get("stage") != pending or summary.get("status") != "error":
+                return False
+            pending = None
+    order = list(qe.STAGE_MODELS)
+    if (pending is not None or stages != sorted(stages, key=order.index)
+            or any(stages.count(stage) > 2 for stage in order)
+            or sum(max(0, stages.count(stage) - 1) for stage in order) > 1):
+        return False
+    if summary.get("status") != "error" and sum(max(0, stages.count(stage) - 1) for stage in order) != summary.get("format_retries"):
+        return False
+    if delivered is None or summary.get("status") == "error":
+        return True
+    catalogue = saved("question_catalogue.json", [])
+    interpretation = saved("question_interpretation.json", {})
+    parsed = strict_loads(returned["question_interpretation"])
+    qe.validate_interpretation(parsed, catalogue, request["transcription_id"] is not None,
+                               explicit_codes(request["question"], catalogue))
+    facets = qe.bind_facets(parsed)
+    if interpretation != {"model_output": parsed, "facets": facets}:
+        return False
+    if not delivered:
+        return stages.count("evidence_extraction") == stages.count("cited_answer") == 0
+    extracted = strict_loads(returned["evidence_extraction"])
+    qe.validate_extraction(extracted, facets, delivered)
+    final = strict_loads(returned["cited_answer"])
+    legacy = qe.validate_final(final, parsed, extracted, delivered)
+    return (extracted == saved("evidence_extraction.json", None)
+            and final == saved("facet_answer.json", None)
+            and legacy == saved("validated_claims.json", None))
 
 
 def review_template(records):
