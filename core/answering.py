@@ -226,10 +226,13 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
     qualified = pipeline in ("apertus-qualified", "qwen-only")
-    if retrieval_mode not in ("standard", "entity"):
-        raise ValueError("Choose standard or entity retrieval")
-    if retrieval_mode == "entity" and (not qualified or not rewrite):
+    if retrieval_mode not in ("standard", "entity", "coverage"):
+        raise ValueError("Choose standard, entity or coverage retrieval")
+    if retrieval_mode != "standard" and (not qualified or not rewrite):
         raise ValueError("Entity retrieval requires a concise cited-answer pipeline and routing")
+    if retrieval_mode == "coverage" and pipeline != "apertus-qualified":
+        raise ValueError("Requested-detail candidate is pinned to Apertus")
+    coverage = retrieval_mode == "coverage"
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"
     structured = hybrid or per_part
@@ -266,6 +269,10 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if retrieval_mode == "entity":
         from core import entity_retrieval as er
         modules.append(Path(er.__file__))
+    if coverage:
+        from core import answer_coverage as ac
+        from core import entity_retrieval as er
+        modules.extend([Path(ac.__file__), Path(er.__file__)])
     answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
@@ -287,6 +294,11 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         **({"retrieval_mode": "entity", "retrieval_version": er.VERSION,
             "entity_instructions_sha256": hashlib.sha256(er.INSTRUCTIONS.encode()).hexdigest()}
            if retrieval_mode == "entity" else {}),
+        **({"retrieval_mode": "coverage", "coverage_version": ac.VERSION,
+            "coverage_plan_tokens": ac.PLAN_TOKENS, "coverage_answer_tokens": ac.ANSWER_TOKENS,
+            "coverage_prompt_sha256": {"plan": hashlib.sha256(ac.PLAN_INSTRUCTIONS.encode()).hexdigest(),
+                "answer": hashlib.sha256(ac.ANSWER_INSTRUCTIONS.encode()).hexdigest()},
+            "software_owned_quote_selection": True} if coverage else {}),
         **({"pipeline": pipeline, "qualification_field": aq.OUTPUT_MODE,
             "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "answer_token_limit": 512, "model": answer_model} if qualified else {}),
@@ -398,7 +410,11 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                     prepared_plan = None
             timings["interpretation_seconds"] = time.perf_counter() - started
         started = time.perf_counter()
-        if retrieval_mode == "entity":
+        coverage_plan = None
+        if coverage:
+            cards, reason, coverage_plan = ac.prepare(question, transcription_id, catalogue, directory,
+                                                      store, get_client, log)
+        elif retrieval_mode == "entity":
             cards, reason = er.retrieve(question, transcription_id, catalogue, directory,
                                         store, get_client, log)
         elif structured and prepared_plan is None:
@@ -454,14 +470,17 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             started = time.perf_counter()
             payload = {"question": question, "transcription_id": transcription_id,
                        "evidence": packet, "evidence_is_not_a_complete_census": True}
+            if coverage:
+                spans = ac.span_bank(packet)
+                payload.update(requirements=coverage_plan["requirements"], citation_spans=spans)
             for attempt in range(2):
-                messages = [{"role": "system", "content": answer_instruction},
+                messages = [{"role": "system", "content": ac.ANSWER_INSTRUCTIONS if coverage else answer_instruction},
                             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-                schema = aq.answer_schema(ANSWER_SCHEMA) if qualified else ANSWER_SCHEMA
-                content = call_model(get_client(), messages, schema, "cited_answer", 512, log)
+                schema = ac.answer_schema(coverage_plan, spans) if coverage else aq.answer_schema(ANSWER_SCHEMA) if qualified else ANSWER_SCHEMA
+                content = call_model(get_client(), messages, schema, "cited_answer", ac.ANSWER_TOKENS if coverage else 512, log)
                 try:
                     raw = strict_json(content)
-                    value = aq.normalize(raw, included) if qualified else validate_answer(raw, included)
+                    value = ac.normalize(raw, coverage_plan, spans, included) if coverage else aq.normalize(raw, included) if qualified else validate_answer(raw, included)
                 except ValueError as error:
                     log.record({"event": "answer_validation_failed", "attempt": attempt + 1,
                                 "reason": str(error), "raw_content": content})
@@ -470,7 +489,11 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                     repairs += 1
                     payload["format_feedback"] = str(error)
                     continue
-                if qualified:
+                if coverage:
+                    log.write("coverage_answer.json", raw)
+                    log.write("quote_translation.json", {"version": ac.VERSION, "spans": spans,
+                        "normalized": value, "raw_model_quotes_generated": False})
+                elif qualified:
                     log.write("qualification_answer.json", raw)
                 log.write("validated_claims.json", value)
                 result = format_answer(value, included)

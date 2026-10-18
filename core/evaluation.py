@@ -88,9 +88,11 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
     """Test-only adapters are explicitly labelled software_fixture, never actual inference."""
     if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
-    if retrieval_mode not in ("standard", "entity") or (retrieval_mode == "entity" and
+    if retrieval_mode not in ("standard", "entity", "coverage") or (retrieval_mode != "standard" and
             pipeline not in ("apertus-qualified", "qwen-only")):
         raise ValueError("Entity retrieval requires a concise Apertus or Qwen-only pipeline")
+    if retrieval_mode == "coverage" and pipeline != "apertus-qualified":
+        raise ValueError("Requested-detail candidate is pinned to Apertus")
     max_posts = 4 if pipeline == "qwen-apertus" else 3
     bundle = load_bundle(references, split)
     if allow_draft and reviewed_by is not None:
