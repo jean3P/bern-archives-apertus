@@ -230,8 +230,6 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         raise ValueError("Choose standard, entity or coverage retrieval")
     if retrieval_mode != "standard" and (not qualified or not rewrite):
         raise ValueError("Entity retrieval requires a concise cited-answer pipeline and routing")
-    if retrieval_mode == "coverage" and pipeline != "apertus-qualified":
-        raise ValueError("Requested-detail candidate is pinned to Apertus")
     coverage = retrieval_mode == "coverage"
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"

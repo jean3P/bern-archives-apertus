@@ -75,8 +75,11 @@ def test_explicit_scope_cannot_be_expanded_to_find_an_unrequested_attribute():
         ac.validate_plan(plan(), "According to III.11.d, what is the age?", CATALOGUE)
 
 
-def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path):
+@pytest.mark.parametrize("pipeline,model", [("apertus-qualified", Settings().model),
+    ("qwen-only", "Qwen/Qwen3-VL-32B-Instruct")])
+def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path, pipeline, model):
     data = make_data(tmp_path)
+    config = Settings(model=model)
     raw = {"status": "answered", "message": "", "claims": [
         {"text": "Three family children.", "citations": [{"span_id": "s1"}]}]}
     bad = deepcopy(raw)
@@ -84,14 +87,14 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
     replies, requests = iter([{"r1": []}, bad, raw]), []
     def wire(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": Settings().model}]})
+            return httpx.Response(200, json={"data": [{"id": model}]})
         body = json.loads(request.content)
         requests.append(body)
-        return httpx.Response(200, json={"model": Settings().model, "choices": [{
+        return httpx.Response(200, json={"model": model, "choices": [{
             "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
     question = "How many children does the teacher have?"
-    response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=Settings(),
-        pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
+    response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=config,
+        pipeline=pipeline, retrieval_mode="coverage", transport=httpx.MockTransport(wire))
     assert response["status"] == "answered" and "Three family" in response["answer"]
     assert [body["max_tokens"] for body in requests] == [ac.PLAN_TOKENS, ac.ANSWER_TOKENS, ac.ANSWER_TOKENS]
     assert json.loads((out / "coverage_answer.json").read_text())["parts"][0]["raw"] == raw
@@ -101,9 +104,14 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 905,
         "quote": "Three family children."}]}
     result = inspect_case(case, out, {"attempted": True, "response": response},
-        {"alternatives": []}, "software_fixture", pipeline="apertus-qualified")
+        {"alternatives": []}, "software_fixture", pipeline=pipeline)
     assert result["protocol_valid"] and result["mechanical_citation_valid"]
     assert result["format_retries"] == 1
+    assert {request["model"] for request in requests} == {model}
+    wrong_pipeline = "apertus-qualified" if pipeline == "qwen-only" else "qwen-only"
+    result = inspect_case(case, out, {"attempted": True, "response": response},
+        {"alternatives": []}, "software_fixture", pipeline=wrong_pipeline)
+    assert not result["protocol_valid"]
 
 
 def test_original_markup_is_retained_byte_for_byte():
@@ -138,7 +146,9 @@ def test_exact_calendar_date_gate_does_not_turn_age_into_birthdate():
     assert ac.date_type_hold({"requirements": [{"answer_type": "fact"}]}, [{"passage": "Age 39."}]) is None
 
 
-def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
+@pytest.mark.parametrize("pipeline,model", [("apertus-qualified", Settings().model),
+    ("qwen-only", "Qwen/Qwen3-VL-32B-Instruct")])
+def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path, pipeline, model):
     data = make_data(tmp_path)
     from core.entity_retrieval import INSTRUCTIONS
     replies = iter([{"entities": [], "question_codes": ["I.1.d"]},
@@ -147,24 +157,26 @@ def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     requests = []
     def wire(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": Settings().model}]})
+            return httpx.Response(200, json={"data": [{"id": model}]})
         body = json.loads(request.content)
         requests.append(body)
-        return httpx.Response(200, json={"model": Settings().model, "choices": [{
+        return httpx.Response(200, json={"model": model, "choices": [{
             "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
     question = "Which district contains Testville?"
-    response, out = run_answer(question, data_dir=data, out=tmp_path / "run", config=Settings(),
-        pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
+    response, out = run_answer(question, data_dir=data, out=tmp_path / "run", config=Settings(model=model),
+        pipeline=pipeline, retrieval_mode="coverage", transport=httpx.MockTransport(wire))
     assert response["status"] == "answered" and requests[0]["messages"][0]["content"] == INSTRUCTIONS
     case = {"case_id": "SYNTHETIC", "topic": "synthetic", "input": {"question": question,
         "transcription_id": None}, "expected_status": "answered", "evidence": [{"answer_id": 902,
         "quote": "District Foxtrot."}]}
     inspected = inspect_case(case, out, {"attempted": True, "response": response},
-        {"alternatives": []}, "software_fixture", pipeline="apertus-qualified")
+        {"alternatives": []}, "software_fixture", pipeline=pipeline)
     assert inspected["protocol_valid"] and inspected["mechanical_citation_valid"]
 
 
-def test_explicit_two_field_requests_are_routed_then_receive_only_their_field(tmp_path):
+@pytest.mark.parametrize("pipeline,model", [("apertus-qualified", Settings().model),
+    ("qwen-only", "Qwen/Qwen3-VL-32B-Instruct")])
+def test_explicit_two_field_requests_are_routed_then_receive_only_their_field(tmp_path, pipeline, model):
     data = make_data(tmp_path)
     replies = iter([{"r1": ["I.1"], "r2": ["I.1.d"]},
         {"status": "answered", "message": "", "claims": [{"text": "Testville.", "citations": [{"span_id": "s1"}]}]},
@@ -172,14 +184,14 @@ def test_explicit_two_field_requests_are_routed_then_receive_only_their_field(tm
     requests = []
     def wire(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": Settings().model}]})
+            return httpx.Response(200, json={"data": [{"id": model}]})
         body = json.loads(request.content)
         requests.append(body)
-        return httpx.Response(200, json={"model": Settings().model, "choices": [{
+        return httpx.Response(200, json={"model": model, "choices": [{
             "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
     question = "According to I.1 and I.1.d, what place and district are named?"
-    response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=Settings(),
-        pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
+    response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=Settings(model=model),
+        pipeline=pipeline, retrieval_mode="coverage", transport=httpx.MockTransport(wire))
     assert response["status"] == "answered" and len(requests) == 3
     for body, code in zip(requests[1:], ["I.1", "I.1.d"], strict=True):
         payload = json.loads(body["messages"][1]["content"])

@@ -335,24 +335,25 @@ def answer_parts(question, transcription_id, plan, packet, included, get_client,
 def receipts_valid(saved, events, included):
     """Actual wire replay and software-owned quote translation, not entailment."""
     from core.answering import strict_json
-    from core.answer_qualifications import MODEL
+    from core.answer_qualifications import MODEL, QWEN_MODEL
     request, implementation = saved("input.json", {}), saved("implementation.json", {})
-    if (implementation.get("coverage_version") != VERSION or implementation.get("model") != MODEL
-            or request.get("pipeline") != "apertus-qualified"):
+    model = {"apertus-qualified": MODEL, "qwen-only": QWEN_MODEL}.get(request.get("pipeline"))
+    if (model is None or implementation.get("coverage_version") != VERSION
+            or implementation.get("model") != model):
         return False
     pending, plans, answers = None, [], []
     for event in events:
         if event.get("event") == "generation_request":
             stage, body = event["stage"], event["request"]
             limit = {"coverage_plan": PLAN_TOKENS, "retrieval_plan": 180, "cited_answer": ANSWER_TOKENS}.get(stage)
-            if pending or not limit or body.get("model") != MODEL or body.get("max_tokens") != limit:
+            if pending or not limit or body.get("model") != model or body.get("max_tokens") != limit:
                 return False
             pending = (stage, body)
         elif event.get("event") == "generation_response":
             if not pending or event["stage"] != pending[0] or event.get("http_status") != 200:
                 return False
             wire = strict_json(event["body"])
-            if wire.get("model") != MODEL or len(wire.get("choices", [])) != 1 or wire["choices"][0]["finish_reason"] != "stop":
+            if wire.get("model") != model or len(wire.get("choices", [])) != 1 or wire["choices"][0]["finish_reason"] != "stop":
                 return False
             raw = strict_json(wire["choices"][0]["message"]["content"])
             if pending[0] == "coverage_plan":

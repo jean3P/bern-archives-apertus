@@ -153,7 +153,9 @@ def qualifications_receipts_valid(saved, events, delivered, *, pipeline="apertus
     from core import answer_qualifications as aq
     if saved("input.json", {}).get("retrieval_mode") == "coverage":
         from core.answer_coverage import receipts_valid
-        return pipeline == "apertus-qualified" and receipts_valid(saved, events, delivered)
+        return (pipeline in ("apertus-qualified", "qwen-only")
+                and saved("input.json", {}).get("pipeline") == pipeline
+                and receipts_valid(saved, events, delivered))
     implementation = saved("implementation.json", {})
     version = implementation.get("version")
     if pipeline not in ("apertus-qualified", "qwen-only"):
