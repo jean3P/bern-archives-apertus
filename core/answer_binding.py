@@ -12,7 +12,7 @@ from core import answer_coverage as previous
 from core import entity_retrieval as er
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "field-bound-v1-joint-answer"
+VERSION = "field-bound-v2-scope-and-metadata"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 1024
 PLAN_INSTRUCTIONS = """Bind each requested detail to its survey catalogue FIELD, not to a guessed answer.
@@ -51,6 +51,26 @@ def route_schema(catalogue, requirements):
             for i in range(len(requirements))}}
 
 
+def question_units(question, catalogue):
+    """Remove catalogue scope syntax from units, never from the actual question."""
+    code = "(?:" + "|".join(re.escape(row["question_number"]) for row in sorted(
+        catalogue, key=lambda item: len(item["question_number"]), reverse=True)) + ")"
+    code_list = code + r"(?:\s*(?:,|and|et|&)\s*" + code + r")*"
+    body = re.sub(r"^(?:For|Pour)\s+" + code_list + r"\s*[,;:]\s*", "", question, flags=re.I)
+    body = re.sub(r"\s+(?:in|from|under|dans)\s+" + code_list + r"\s*(?=[?]|$)", "", body, flags=re.I)
+    return previous.literal_requirements(body)
+
+
+def metadata_hold(question, packet):
+    words = " ".join(er.tokens(question))
+    asks_pdf_index = "pdf" in words.split() and bool(re.search(r"\b(?:index|indice)\b", words))
+    if asks_pdf_index and not any(type(row.get("pdf_page_index")) is int
+                                  for group in packet for row in group["records"]):
+        return {"reason": "no_verified_pdf_page_index", "message":
+            "The supplied records have no verified PDF page-index mapping. An age or editorial page marker cannot substitute for that metadata."}
+    return None
+
+
 def prepare(question, transcription_id, catalogue, directory, store, get_client, log):
     from core.answering import call_model, retrieve, strict_json
     log.write("binding_catalogue.json", catalogue)
@@ -66,7 +86,7 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
             "scope": "named_entity"}
         log.write("binding_plan.json", plan)
         return cards, reason, plan
-    requirements = previous.literal_requirements(question)
+    requirements = question_units(question, catalogue)
     if len(explicit) == 1:
         for item in requirements:
             item["question_codes"] = explicit
@@ -109,7 +129,8 @@ def bound_units(plan, packet):
     for group in packet:
         for row in group["records"]:
             spans.append({"span_id": f"s{len(spans)+1}", "record_id": row["record_id"],
-                          "question_code": row["question_number"], "quote": group["passage"]})
+                          "question_code": row["question_number"], "quote": group["passage"],
+                          "pdf_page_index": row.get("pdf_page_index")})
     for i, requirement in enumerate(plan["requirements"], 1):
         key, codes = f"r{i}", requirement["question_codes"]
         selected = [span for span in spans if span["question_code"] in codes]
@@ -233,7 +254,7 @@ def answer_parts(question, transcription_id, plan, packet, included, get_client,
     from core.answering import call_model, strict_json
     binding = bound_units(plan, packet)
     log.write("binding_evidence.json", binding)
-    gate = previous.date_type_hold(plan, packet)
+    gate = metadata_hold(question, packet) or previous.date_type_hold(plan, packet)
     if binding["unresolved"] or gate:
         message = ("Unresolved or unavailable field evidence for " + ", ".join(binding["unresolved"]) +
                    "; no broad-evidence fallback was used.") if binding["unresolved"] else gate["message"]
@@ -300,7 +321,7 @@ def receipts_valid(saved, events, included):
         if not er.receipts_valid(saved, events):
             return False
     else:
-        units = previous.literal_requirements(request["question"])
+        units = question_units(request["question"], catalogue)
         explicit = explicit_codes(request["question"], catalogue)
         if routes:
             if len(routes) != 1 or routes[0][1] != saved("binding_route.json", None):
@@ -326,7 +347,7 @@ def receipts_valid(saved, events, included):
     binding = bound_units(plan, packet)
     if binding != saved("binding_evidence.json", None):
         return False
-    gate = previous.date_type_hold(plan, packet)
+    gate = metadata_hold(request["question"], packet) or previous.date_type_hold(plan, packet)
     if binding["unresolved"] or gate:
         return not answers and saved("binding_hold.json", {}).get("value") == saved("validated_claims.json", None)
     required = schedule_requirements(request["question"], binding)

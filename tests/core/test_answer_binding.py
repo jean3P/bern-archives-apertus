@@ -134,3 +134,21 @@ def test_genuine_nonanswer_does_not_require_fake_completeness():
         "message": "The required fact is not in the supplied evidence."}, binding, included,
         ab.schedule_requirements("What is the exact GPS?", binding))
     assert value["status"] == "insufficient_evidence"
+
+
+def test_catalogue_scope_syntax_is_not_an_extra_answer_requirement():
+    units = ab.question_units("What place and district are named in I.1 and I.1.d?", CATALOGUE)
+    assert [unit["label"] for unit in units] == ["What place", "district are named?"]
+    units = ab.question_units("For III.11.d, what is the verified zero-based PDF page index?", CATALOGUE)
+    assert len(units) == 1 and units[0]["label"].startswith("what is the verified")
+    assert len(ab.question_units("According to I.1 and I.1.d, what place and district?", CATALOGUE)) == 2
+
+
+def test_pdf_index_requires_actual_metadata_not_age_or_editorial_marker():
+    packet, _, _, _, _ = fixture()
+    packet[0]["passage"] = "Age 39. ||[Seite 7]"
+    question = "What is the verified zero-based PDF page index?"
+    assert ab.metadata_hold(question, packet)["reason"] == "no_verified_pdf_page_index"
+    assert ab.metadata_hold("How old is the teacher?", packet) is None
+    packet[0]["records"][0]["pdf_page_index"] = 7
+    assert ab.metadata_hold(question, packet) is None
