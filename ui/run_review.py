@@ -1,6 +1,7 @@
 """Saved-run review screen (S5): read-only display of recorded development cases."""
 
 import html
+import json
 
 import gradio as gr
 
@@ -23,6 +24,8 @@ CSS = """
 .draft-label { font-weight: 700; color: #6d4c00; background: #fff8e1; padding: 2px 8px; display: inline-block; }
 .load-error { font-weight: 700; color: #8e1c1c; }
 .review-ok { font-weight: 600; color: #1b5e20; }
+.timeline { border-collapse: collapse; width: 100%; }
+.timeline th, .timeline td { border-bottom: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; }
 """
 
 
@@ -210,6 +213,80 @@ def on_select(run, case_id):
     return question_answer_html(case), evidence_html(evidence), reference_html(run["references"].get(case_id))
 
 
+TECHNICAL_FILES = {
+    "Input (input.json)": "input.json",
+    "Final output (response.json)": "response.json",
+    "Retrieved sources (retrieved_sources.json)": "retrieved_sources.json",
+    "Evidence delivered to the model (evidence.json)": "evidence.json",
+    "Validated claims (validated_claims.json)": "validated_claims.json",
+    "Calls, retries and timing (summary.json)": "summary.json",
+    "Model requests and responses (events.jsonl)": "events.jsonl",
+}
+
+
+def readable_event(event: dict) -> dict:
+    """A display copy of one event; a JSON response body is shown parsed, the record is unchanged."""
+    shown = dict(event)
+    if isinstance(shown.get("body"), str):
+        try:
+            shown["body"] = json.loads(shown["body"])
+        except ValueError:
+            pass
+    return shown
+
+
+def pretty_json(name: str, value) -> str:
+    """Read-only text for the JSON viewer; never invents content for a missing file."""
+    if value is None:
+        return f"Unavailable: {name} was not recorded for this case."
+    if name.endswith(".jsonl"):
+        value = [readable_event(event) for event in value]
+    return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+def timeline_html(case: dict, events) -> str:
+    """Recorded stages in order, plus the case's call/retry/timing counts."""
+    tokens = case.get("token_usage") or {}
+    seconds = case.get("total_seconds")
+    header = rows([
+        ("Generation calls", case.get("generation_posts_attempted")),
+        ("Format retries", case.get("format_retries")),
+        ("Total time (s)", "Not measured" if seconds is None else round(seconds, 2)),
+        ("Prompt / generated tokens",
+         f'{tokens.get("prompt_tokens", "Not measured")} / {tokens.get("completion_tokens", "Not measured")}'),
+    ])
+    if events is None:
+        return f'<div class="review-panel">{header}<p><em>Event log unavailable for this case.</em></p></div>'
+    lines = []
+    for number, event in enumerate(events, start=1):
+        if event.get("event") == "retrieval":
+            detail = (f'code {event.get("question_code") or "none"}, query "{event.get("query") or ""}", '
+                      f'{len(event.get("returned_record_ids") or [])} record(s) returned')
+        else:
+            detail = ""
+        took = event.get("seconds")
+        lines.append("<tr>" + "".join(f"<td>{esc(cell)}</td>" for cell in [
+            number, event.get("at_utc"), event.get("event"), event.get("stage") or "",
+            event.get("http_status") or "", "" if took is None else round(took, 3), detail]) + "</tr>")
+    head = "".join(f"<th>{name}</th>" for name in ["#", "Time (UTC)", "Event", "Stage", "HTTP", "Seconds", "Details"])
+    return (f'<div class="review-panel">{header}<table class="timeline"><tr>{head}</tr>'
+            + "".join(lines) + "</table></div>")
+
+
+def on_show_technical(run, case_id, artifact_label):
+    """Timeline plus one raw artifact for the selected case; cleared when nothing valid is selected."""
+    case = find_case(run, case_id)
+    if case is None:
+        return "", ""
+    name = TECHNICAL_FILES.get(artifact_label, "input.json")
+    try:
+        events = load_case_file(run["directory"], case_id, "events.jsonl")
+        artifact = events if name == "events.jsonl" else load_case_file(run["directory"], case_id, name)
+    except (RunLoadError, ValueError, OSError) as exc:
+        return f'<p class="load-error">Could not read technical details: {esc(exc)}</p>', ""
+    return timeline_html(case, events), pretty_json(name, artifact)
+
+
 def find_case(run, case_id):
     """The recorded case with this ID, or None."""
     if run is None:
@@ -271,6 +348,12 @@ def build_app(default_run: str = "") -> gr.Blocks:
         evidence_panel = gr.HTML(label="Original evidence delivered to the model", show_label=True,
                                  container=True, padding=True)
 
+        with gr.Accordion("Technical details (read-only, recorded files)", open=False):
+            timeline = gr.HTML(label="Recorded stages in order", show_label=True, container=True, padding=True)
+            artifact_choice = gr.Dropdown(choices=list(TECHNICAL_FILES), value=list(TECHNICAL_FILES)[0],
+                                          label="Recorded file")
+            artifact_view = gr.Textbox(label="File contents", interactive=False, lines=20, max_lines=40)
+
         gr.Markdown("### Human review")
         reviewer = gr.Textbox(label="Reviewer name (required for a decision)")
         with gr.Row():
@@ -284,11 +367,15 @@ def build_app(default_run: str = "") -> gr.Blocks:
 
         panels = [question_panel, evidence_panel, reference_panel]
         form = [decision, supported, notes, suggestion, review_message]
+        technical = [timeline, artifact_view]
         load_button.click(on_load, [run_path], [run_state, run_info, cases, case_id, reviews]).then(
             on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
             on_select, [run_state, case_id], panels).then(
-            on_show_form, [run_state, reviews, case_id], form)
+            on_show_form, [run_state, reviews, case_id], form).then(
+            on_show_technical, [run_state, case_id, artifact_choice], technical)
         case_id.change(on_select, [run_state, case_id], panels)
+        case_id.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
+        artifact_choice.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
         case_id.change(on_show_form, [run_state, reviews, case_id], form)
         save_button.click(on_save_review,
                           [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
