@@ -273,7 +273,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         from core import answer_coverage as ac
         from core import entity_retrieval as er
         modules.extend([Path(ac.__file__), Path(er.__file__)])
-    answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
+    answer_instruction = ac.ANSWER_INSTRUCTIONS if coverage else aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
         modules.extend([Path(qe.__file__), Path(__file__).with_name("config.py")])
@@ -288,7 +288,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "retrieval_instructions_sha256": {
             mode: hashlib.sha256(retrieval_instructions(scoped=scoped).encode()).hexdigest()
             for mode, scoped in (("scoped", True), ("global", False))},
-        "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
+        "natural_question_routing": ("requested_details_before_scoped_or_entity_retrieval" if coverage else
+                                     "question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
         "mechanical_citation_checks_only": True,
         **({"retrieval_mode": "entity", "retrieval_version": er.VERSION,
@@ -301,7 +302,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             "software_owned_quote_selection": True} if coverage else {}),
         **({"pipeline": pipeline, "qualification_field": aq.OUTPUT_MODE,
             "max_generation_posts": 3, "max_shared_validation_retries": 1,
-            "answer_token_limit": 512, "model": answer_model} if qualified else {}),
+            "answer_token_limit": ac.ANSWER_TOKENS if coverage else 512, "model": answer_model} if qualified else {}),
         **({"pipeline": pipeline, "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "stage_models": {stage: fa.MODEL for stage in fa.TOKENS}, "stage_token_limits": fa.TOKENS,
             "facet_prompt_sha256": {"interpretation": hashlib.sha256(fa.INTERPRET_INSTRUCTIONS.encode()).hexdigest(),

@@ -3,17 +3,20 @@
 No reference answers, case IDs or gold source IDs are runtime inputs. Models
 interpret requirements and write answers; software only binds evidence spans.
 """
+from copy import deepcopy
 import json
 
 from core import entity_retrieval as er
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "requested-details-v1-source-owned-quotes"
+VERSION = "requested-details-v2-conditional-entries"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 768
 PLAN_INSTRUCTIONS = """Interpret the question, not the historical answer. Return entities and requirements.
 Copy identifying place/person names literally from the question, or use [].
 Split ALL requested details into 1-5 short requirements in the user's language.
+Include ONLY attributes actually asked for, not extra facts about a named location.
+Identifying names establish scope; do not turn them into additional requirements.
 Separate different populations or attributes: each requirement needs its own answer.
 Keep amounts WITH their periods and exceptions. Do not invent answers or source IDs.
 Each requirement has label, question_codes and answer_type (fact or exact_date).
@@ -132,6 +135,16 @@ def answer_schema(plan, spans):
             "spans": {"type": "array", "maxItems": 3,
                       "items": {"type": "string", "enum": [s["span_id"] for s in spans]}},
             "reason": {"type": "string", "maxLength": 160}}}
+    supported, unsupported = deepcopy(item), deepcopy(item)
+    supported["properties"]["supported"] = {"type": "boolean", "enum": [True]}
+    supported["properties"]["answer"]["minLength"] = 1
+    supported["properties"]["spans"]["minItems"] = 1
+    supported["properties"]["reason"] = {"type": "string", "enum": [""]}
+    unsupported["properties"]["supported"] = {"type": "boolean", "enum": [False]}
+    unsupported["properties"]["answer"] = {"type": "string", "enum": [""]}
+    unsupported["properties"]["spans"]["maxItems"] = 0
+    unsupported["properties"]["reason"]["minLength"] = 1
+    item = {"anyOf": [supported, unsupported]}
     keys = [f"r{i + 1}" for i in range(len(plan["requirements"]))]
     return {"type": "object", "additionalProperties": False, "required": keys,
             "properties": {key: item for key in keys}}
