@@ -182,8 +182,10 @@ def on_filter(run, reviews, choice):
     return case_table(run, reviews, choice), review_progress(run, reviews, choice)
 
 
-def on_table_select(evt: gr.SelectData):
-    """Clicking any cell of a row selects that row's case."""
+def on_table_select(dirty, evt: gr.SelectData):
+    """Clicking any cell of a row selects that row's case, unless the form has unsaved edits."""
+    if dirty:
+        return gr.skip()
     return evt.row_value[0]
 
 
@@ -338,6 +340,38 @@ def on_export(run, reviews):
             f"{suggestions} human suggestion(s). The saved run was not changed.</p>")
 
 
+def form_matches_saved(run, reviews, case_id, decision, supported, notes, suggestion) -> bool:
+    """True when the form shows exactly this case's review in memory (or a blank Pending one)."""
+    case = find_case(run, case_id)
+    if case is None:
+        return True
+    review = reviews.get(case_id, {})
+    saved_supported = review.get("supported_claims")
+    return (decision == decision_label(review)
+            and supported == (NOT_COUNTED if saved_supported is None else str(saved_supported))
+            and (notes or "") == review.get("notes", "")
+            and (suggestion or "").strip() == review.get("suggestion", ""))
+
+
+def lock_updates(locked: bool):
+    """While the form has unsaved edits, block navigation, loading, resuming and exporting, and say why."""
+    marker = ('<p class="load-error">● Unsaved changes: click Save review or Discard changes '
+              "before moving to another case, loading, resuming or exporting.</p>") if locked else ""
+    enabled = not locked
+    return (locked, marker, gr.Dropdown(interactive=enabled), gr.Button(interactive=enabled),
+            gr.Button(interactive=enabled), gr.Button(interactive=enabled), gr.Button(interactive=enabled),
+            gr.Button(interactive=enabled))
+
+
+def on_form_edit(run, reviews, case_id, decision, supported, notes, suggestion):
+    """Mark the form as unsaved when it differs from the review in memory."""
+    return lock_updates(not form_matches_saved(run, reviews, case_id, decision, supported, notes, suggestion))
+
+
+def on_unlock():
+    return lock_updates(False)
+
+
 def on_list_exports(run):
     """Fill the resume list with this run's earlier exports, newest first."""
     names = list_exports(run)
@@ -363,6 +397,7 @@ def build_app(default_run: str = "") -> gr.Blocks:
         gr.Markdown(BANNER)
         run_state = gr.State(None)
         reviews = gr.State({})
+        dirty = gr.State(False)
 
         with gr.Row():
             run_path = gr.Textbox(label="Saved run folder", value=default_run, scale=4)
@@ -397,7 +432,10 @@ def build_app(default_run: str = "") -> gr.Blocks:
         notes = gr.Textbox(label="Review notes", lines=2)
         suggestion = gr.Textbox(label="Human suggestion: corrected answer (never replaces the model answer)",
                                 lines=3)
-        save_button = gr.Button("Save review (in memory)", variant="primary")
+        with gr.Row():
+            save_button = gr.Button("Save review (in memory)", variant="primary")
+            discard_button = gr.Button("Discard changes")
+        unsaved_marker = gr.HTML()
         review_message = gr.HTML()
 
         gr.Markdown("### Export")
@@ -411,12 +449,16 @@ def build_app(default_run: str = "") -> gr.Blocks:
         panels = [question_panel, evidence_panel, reference_panel]
         form = [decision, supported, notes, suggestion, review_message]
         technical = [timeline, artifact_view]
+        lock = [dirty, unsaved_marker, case_id, previous_button, next_button, load_button, resume_button,
+                export_button]
+        form_values = [run_state, reviews, case_id, decision, supported, notes, suggestion]
         load_button.click(on_load, [run_path], [run_state, run_info, cases, case_id, reviews]).then(
             on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
             on_select, [run_state, case_id], panels).then(
             on_show_form, [run_state, reviews, case_id], form).then(
             on_show_technical, [run_state, case_id, artifact_choice], technical).then(
-            on_list_exports, [run_state], export_choice)
+            on_list_exports, [run_state], export_choice).then(
+            on_unlock, None, lock)
         case_id.change(on_select, [run_state, case_id], panels)
         case_id.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
         artifact_choice.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
@@ -424,14 +466,18 @@ def build_app(default_run: str = "") -> gr.Blocks:
         save_button.click(on_save_review,
                           [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
                            notes, suggestion],
-                          [reviews, cases, filter_info, review_message])
+                          [reviews, cases, filter_info, review_message]).then(
+            on_form_edit, form_values, lock)
+        discard_button.click(on_show_form, [run_state, reviews, case_id], form).then(on_unlock, None, lock)
+        for field in [decision, supported, notes, suggestion]:
+            field.input(on_form_edit, form_values, lock)
         export_button.click(on_export, [run_state, reviews], export_message).then(
             on_list_exports, [run_state], export_choice)
         resume_button.click(on_resume, [run_state, filter_choice, export_choice],
                             [reviews, cases, filter_info, export_message]).then(
-            on_show_form, [run_state, reviews, case_id], form)
+            on_show_form, [run_state, reviews, case_id], form).then(on_unlock, None, lock)
         filter_choice.change(on_filter, [run_state, reviews, filter_choice], [cases, filter_info])
-        cases.select(on_table_select, None, case_id)
+        cases.select(on_table_select, [dirty], case_id)
         previous_button.click(on_previous, [run_state, reviews, filter_choice, case_id], case_id)
         next_button.click(on_next, [run_state, reviews, filter_choice, case_id], case_id)
     return review
