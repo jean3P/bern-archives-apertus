@@ -58,9 +58,15 @@ def test_wrong_served_model_is_rejected():
         client.close()
 
 
-def test_unimplemented_archive_service_never_fakes_an_answer():
-    with pytest.raises(NotImplementedError):
-        answer_question("Where is the school?")
+def test_archive_service_delegates_without_changing_the_ui_contract(monkeypatch):
+    import core.answering
+    response = {"mode": "live", "status": "error", "answer": None,
+                "sources": [], "message": "Software-only boundary fixture"}
+    def fake_run(question, transcription_id):
+        assert (question, transcription_id) == ("Where is the school?", 16)
+        return response, None
+    monkeypatch.setattr(core.answering, "run_answer", fake_run)
+    assert answer_question("Where is the school?", 16) == response
 
 
 def test_search_requires_a_completed_real_dataset(tmp_path, monkeypatch):

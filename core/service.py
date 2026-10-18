@@ -1,4 +1,4 @@
-"""Shared UI boundary: J2 source search; generation remains a separate J3 task."""
+"""Stable UI boundary for source search and explicitly requested cited answers."""
 
 from contracts import AnswerResponse, SourceCard
 
@@ -9,4 +9,6 @@ def search_records(query: str, transcription_id: int | None = None) -> list[Sour
 
 
 def answer_question(question: str, transcription_id: int | None = None) -> AnswerResponse:
-    raise NotImplementedError("J3: archival evidence retrieval and answering are not connected yet")
+    from core.answering import run_answer
+    result, _ = run_answer(question, transcription_id)
+    return result

@@ -4,7 +4,7 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2 import/export/SQLite-search code is prepared on `jean/backend`; successful import/search validation is still pending.** The first user pilot exposed a dump-control syntax issue; its reader fix awaits a rerun. See the [J2 commands](docs/J2.md). Model-grounded archival answers and the UI remain J3/S1 work. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
+J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3 cited answering is implemented but not run or validated yet**; see the [answer commands and limits](docs/J3.md). The UI remains separate S1/S2 work. No historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
@@ -25,7 +25,7 @@ For model access, copy `.env.example` to your ignored `.env` and configure your 
 
 ```text
 bern-archives-apertus/
-  core/                  Jean: configuration, model client, future data/search/service
+  core/                  Jean: configuration, data/search, model client and answer service
   scripts/               Jean: optional model-service utilities
   contracts.py           Jean integrates agreed UI/backend type changes
   ui/                    Dyane98: interface-only helpers
@@ -45,7 +45,16 @@ bern-archives-apertus/
 
 `app.py` is an assigned future file, not a working application already present in this scaffold. The agreed callable boundary is `core.service.search_records` and `core.service.answer_question`, returning the shapes in `contracts.py`. UI examples are always marked `mode: demo`; live mode requires real backend data and model replies.
 
-J2 source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. Answer generation remains unimplemented until J3. See [J2 scope, policy, outputs and run commands](docs/J2.md).
+Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. Its actual execution and semantic quality are still unvalidated. See [dataset commands](docs/J2.md) and [answer commands](docs/J3.md).
+
+```bash
+uv run --locked python -m core.answer_cli \
+  "According to I.1, what is the place called?" \
+  --transcription-id 16 --data-dir data/derived/j2-full \
+  --out runs/j3-location-01
+```
+
+Use a new output directory for each attempt. The source dataset stays unchanged; run logs retain both failed and successful replies. No inference runs simply by importing the modules. Citation checks verify references and exact spans, not whether a claim logically follows from its quote.
 
 ## Avoid editing the same files
 
@@ -68,4 +77,4 @@ Each person runs only their own branch command. Do not rerun `switch -c` if the 
 
 Our original code is **MIT licensed**; see [LICENSE](LICENSE). MIT does not relicense Apertus weights, the Swiss Federal Archives/University of Bern edition, source excerpts, slides or literature. The Stapfer SQL resource is linked by [opendata.swiss](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799), with its own [open-use terms](https://opendata.swiss/terms-of-use#terms_open). Preserve source references and the scholarly edition credit. The short original-text excerpt in the UI fixture retains that provenance; its English response is our authored display example, not a model result.
 
-Do not commit raw SQL/datasets, internal notes, modern contributor contacts, meeting transcripts, credentials, model weights or run logs. The private repository setting is not a substitute for that rule. The public projection and its evaluation are later work.
+Do not commit raw SQL/datasets, internal notes, modern contributor contacts, meeting transcripts, credentials, model weights or run logs. The private repository setting is not a substitute for that rule. The public projection follows its documented allowlist; independent content/rights review and answer evaluation remain explicit work.
