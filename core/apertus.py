@@ -24,6 +24,35 @@ class ApertusClient:
             raise ValueError("The configured Apertus model is not served")
         return payload
 
+    def complete(self, messages, schema, *, name, max_tokens, record):
+        """One explicit POST. Record raw wire data before parsing; never retry here."""
+        request = {"model": self.config.model, "temperature": 0, "max_tokens": max_tokens,
+                   "messages": messages,
+                   "response_format": {"type": "json_schema", "json_schema": {
+                       "name": name, "strict": True, "schema": schema}}}
+        record({"event": "generation_request", "stage": name, "request": request})
+        tick = time.perf_counter()
+        try:
+            response = self.http.post(self.config.base_url + "/chat/completions", json=request)
+        except httpx.HTTPError as error:
+            record({"event": "generation_transport_error", "stage": name,
+                    "error_type": type(error).__name__, "seconds": time.perf_counter() - tick})
+            raise
+        record({"event": "generation_response", "stage": name,
+                "http_status": response.status_code, "body": response.text,
+                "seconds": time.perf_counter() - tick})
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("model") != self.config.model:
+            raise ValueError("The response model differs from the configured model")
+        choices = payload.get("choices", [])
+        if len(choices) != 1 or choices[0].get("finish_reason") != "stop":
+            raise ValueError("Missing, multiple or incomplete model replies")
+        content = choices[0].get("message", {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Empty model reply")
+        return content
+
     def smoke(self):
         models = self.models()
         request = {"model": self.config.model, "temperature": 0, "max_tokens": 16,

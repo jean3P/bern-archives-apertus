@@ -58,7 +58,18 @@ def test_wrong_served_model_is_rejected():
         client.close()
 
 
-@pytest.mark.parametrize("fn", [search_records, answer_question])
-def test_unimplemented_archive_service_never_fakes_an_answer(fn):
-    with pytest.raises(NotImplementedError):
-        fn("Where is the school?")
+def test_archive_service_delegates_without_changing_the_ui_contract(monkeypatch):
+    import core.answering
+    response = {"mode": "live", "status": "error", "answer": None,
+                "sources": [], "message": "Software-only boundary fixture"}
+    def fake_run(question, transcription_id):
+        assert (question, transcription_id) == ("Where is the school?", 16)
+        return response, None
+    monkeypatch.setattr(core.answering, "run_answer", fake_run)
+    assert answer_question("Where is the school?", 16) == response
+
+
+def test_search_requires_a_completed_real_dataset(tmp_path, monkeypatch):
+    monkeypatch.setenv("BERN_DATA_DIR", str(tmp_path / "not-built"))
+    with pytest.raises(FileNotFoundError):
+        search_records("Where is the school?")
