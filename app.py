@@ -97,10 +97,10 @@ def parse_transcription_id(value):
     """Gradio may supply integral floats; never truncate a fractional scope."""
     if value is None or isinstance(value, str) and not value.strip():
         return None
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and value.strip().isdecimal() and len(value.strip()) <= 19:
         value = int(value.strip())
-    if (type(value) not in (int, float) or not math.isfinite(value)
-            or value != int(value) or not 1 <= value <= 2**63 - 1):
+    if (type(value) not in (int, float) or not 1 <= value <= 2**63 - 1
+            or not math.isfinite(value) or value != int(value)):
         raise InputValidationError(
             "Enter a positive whole transcription ID (for example, 16), "
             "or leave it blank to search without a transcription filter."

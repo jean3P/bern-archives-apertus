@@ -56,7 +56,10 @@ def test_transcription_text_field_passes_whole_id_as_integer(monkeypatch):
     assert calls == [16]
 
 
-@pytest.mark.parametrize("value", [-1, 0, 16.5, True, "16.5", "bad", float("nan"), float("inf")])
+@pytest.mark.parametrize("value", [
+    -1, 0, 16.5, True, "16.5", "bad", float("nan"), float("inf"),
+    "0", "-1", "1e2", "²", "9" * 5000, 2**63, 10**400,
+])
 def test_bad_scope_never_reaches_the_backend(monkeypatch, value):
     calls = []
     monkeypatch.setattr(app.service, "answer_question", lambda *args: calls.append(args))
