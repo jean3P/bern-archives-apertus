@@ -89,6 +89,46 @@ def reference_html(reference) -> str:
             + f"<div><strong>Known source quotations:</strong><ul>{quotes or '<li>None</li>'}</ul></div></div>")
 
 
+TABLE_HEADERS = ["Case", "Question", "Backend status", "Review", "Duration (s)"]
+
+
+def case_table(run) -> list:
+    """One row per recorded case, in run order; nothing is filtered out."""
+    table = []
+    for case in run["cases"]:
+        seconds = case.get("total_seconds")
+        table.append([
+            case["case_id"],
+            case["input"]["question"],
+            case.get("observed_status") or "not attempted",
+            "Pending",
+            "Not measured" if seconds is None else round(seconds, 2),
+        ])
+    return table
+
+
+def step_case(run, case_id, offset):
+    """Previous/next case ID, staying within the first and last case."""
+    if run is None or not run["cases"]:
+        return None
+    case_ids = [case["case_id"] for case in run["cases"]]
+    position = case_ids.index(case_id) if case_id in case_ids else 0
+    return case_ids[max(0, min(len(case_ids) - 1, position + offset))]
+
+
+def on_previous(run, case_id):
+    return step_case(run, case_id, -1)
+
+
+def on_next(run, case_id):
+    return step_case(run, case_id, +1)
+
+
+def on_table_select(evt: gr.SelectData):
+    """Clicking any cell of a row selects that row's case."""
+    return evt.row_value[0]
+
+
 def on_load(run_path):
     """Load and verify a run; on failure clear everything and explain why."""
     try:
@@ -96,9 +136,10 @@ def on_load(run_path):
         run["references"] = load_references(run["directory"])
     except (RunLoadError, ValueError, OSError) as exc:
         message = f'<p class="load-error">Could not load run: {esc(exc)}</p>'
-        return None, message, gr.Dropdown(choices=[], value=None)
+        return None, message, [], gr.Dropdown(choices=[], value=None)
     case_ids = [case["case_id"] for case in run["cases"]]
-    return run, run_summary(run), gr.Dropdown(choices=case_ids, value=case_ids[0] if case_ids else None)
+    first = case_ids[0] if case_ids else None
+    return run, run_summary(run), case_table(run), gr.Dropdown(choices=case_ids, value=first)
 
 
 def on_select(run, case_id):
@@ -125,7 +166,12 @@ def build_app(default_run: str = "") -> gr.Blocks:
             run_path = gr.Textbox(label="Saved run folder", value=default_run, scale=4)
             load_button = gr.Button("Load", variant="primary", scale=1)
         run_info = gr.HTML(label="Run", show_label=True, container=True, padding=True)
-        case_id = gr.Dropdown(label="Case", choices=[], value=None)
+        cases = gr.Dataframe(headers=TABLE_HEADERS, value=[], interactive=False, wrap=True,
+                             max_height=320, label="Cases (click a row to open it)")
+        with gr.Row():
+            previous_button = gr.Button("◀ Previous")
+            case_id = gr.Dropdown(label="Case", choices=[], value=None, scale=2)
+            next_button = gr.Button("Next ▶")
 
         with gr.Row():
             question_panel = gr.HTML(label="Question and model answer", show_label=True, container=True, padding=True)
@@ -134,7 +180,10 @@ def build_app(default_run: str = "") -> gr.Blocks:
                                  container=True, padding=True)
 
         panels = [question_panel, evidence_panel, reference_panel]
-        load_button.click(on_load, [run_path], [run_state, run_info, case_id]).then(
+        load_button.click(on_load, [run_path], [run_state, run_info, cases, case_id]).then(
             on_select, [run_state, case_id], panels)
         case_id.change(on_select, [run_state, case_id], panels)
+        cases.select(on_table_select, None, case_id)
+        previous_button.click(on_previous, [run_state, case_id], case_id)
+        next_button.click(on_next, [run_state, case_id], case_id)
     return review
