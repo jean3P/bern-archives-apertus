@@ -9,9 +9,9 @@ import pytest
 from core.evaluation_records import digest, seal_directory, verify_directory
 from core.evaluation_scoring import load_reviews
 from ui.review_records import (CORRECTIONS_FILE, REVIEW_FILE, ReviewError, RunLoadError, export_session,
-                               import_session, list_exports, load_case_file, load_references, load_run,
+                               discover_runs, import_session, list_exports, load_case_file, load_references, load_run,
                                make_review)
-from ui.run_review import (evidence_html, on_form_edit, on_table_select, question_answer_html,
+from ui.run_review import (evidence_html, on_form_edit, on_load, on_table_select, question_answer_html,
                            step_case, visible_case_ids)
 
 # Synthetic fixture records: invented for these tests, not archival data or model output.
@@ -60,16 +60,19 @@ def make_run(directory, split="development", binding_prefix="a"):
                                                                          "survey_question": "Ort?",
                                                                          "archive_reference": None,
                                                                          "pdf_page_index": None}]}]})
+        write(directory / "cases" / case_id / "binding_plan.json",
+              {"synthetic": True, "requirements": [{"label": "place", "question_codes": ["I.1"]}]})
         (directory / "cases" / case_id / "events.jsonl").write_text(
             json.dumps({"event": "retrieval", "question_code": "I.1", "returned_record_ids": []}) + "\n",
             encoding="utf-8")
     (directory / "case-scores.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines),
                                                  encoding="utf-8")
     (directory / "references").mkdir()
-    (directory / "references" / "development-questions.jsonl").write_text(
+    (directory / "references" / f"{split}-questions.jsonl").write_text(
         "".join(json.dumps(ref) + "\n" for ref in references), encoding="utf-8")
     # The evaluation set must never be opened by the dashboard; invalid JSON would fail if it were.
-    (directory / "references" / "evaluation-questions.jsonl").write_text("NOT FOR S5\n", encoding="utf-8")
+    other = "evaluation" if split == "development" else "development"
+    (directory / "references" / f"{other}-questions.jsonl").write_text("NOT FOR THIS REVIEW\n", encoding="utf-8")
     seal_directory(directory, "recorded")
     return directory
 
@@ -101,6 +104,41 @@ def test_loads_sealed_development_run_without_reading_evaluation_set(run_dir):
     run = load_run(run_dir)
     assert [case["case_id"] for case in run["cases"]] == ["SYN-01", "SYN-02", "SYN-03"]
     assert set(load_references(run["directory"])) == {"SYN-01", "SYN-02", "SYN-03"}
+
+
+def test_evaluation_review_requires_opt_in_and_uses_its_own_reference_snapshot(tmp_path):
+    directory = make_run(tmp_path / "evaluation-run", split="evaluation")
+    before = inventory(directory)
+    with pytest.raises(RunLoadError, match="Only development"):
+        load_run(directory)
+    with pytest.raises(RunLoadError, match="explicit review opt-in"):
+        load_references(directory, "evaluation")
+    run = load_run(directory, allow_evaluation=True)
+    assert run["manifest"]["split"] == "evaluation"
+    assert len(load_references(directory, "evaluation", allow_evaluation=True)) == 3
+    loaded, shown, table, _, reviews = on_load(str(directory), allow_evaluation=True)
+    assert len(loaded["references"]) == len(table) == 3 and reviews == {}
+    assert "not an untouched test set" in shown
+    assert inventory(directory) == before
+
+
+def test_run_discovery_does_not_recurse_into_archives_or_reveal_evaluation_by_default(tmp_path):
+    root = tmp_path / "runs"
+    dev = make_run(root / "dev")
+    evaluation = make_run(root / "evaluation", split="evaluation")
+    make_run(root / "_archive" / "old")
+    (root / "review-exports").mkdir()
+    assert discover_runs(root) == [str(dev)]
+    assert discover_runs(root, allow_evaluation=True) == [str(dev), str(evaluation)]
+    assert discover_runs(root / "missing") == []
+
+
+def test_bound_artifacts_are_available_without_opening_arbitrary_files(run_dir):
+    artifact = load_case_file(run_dir, "SYN-01", "binding_plan.json")
+    assert artifact["synthetic"] is True
+    assert load_case_file(run_dir, "SYN-01", "binding_hold.json") is None
+    with pytest.raises(RunLoadError):
+        load_case_file(run_dir, "SYN-01", ".env")
 
 
 def test_rejects_missing_seal_changed_run_and_non_development_split(tmp_path, run_dir):

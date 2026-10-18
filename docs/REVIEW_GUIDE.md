@@ -1,6 +1,6 @@
 # Saved run review guide
 
-The review dashboard opens a **saved J4 development run** and lets a person check each question: the model's answer, the evidence it received and the draft reference, side by side. You record a human decision and, if useful, a suggested corrected answer. The dashboard only reads recorded files. It does not call Apertus, search the dataset or need a GPU, and it never changes the saved run.
+The review dashboard opens a **saved J4 run** and lets a person check each question: the model's answer, the evidence it received and the draft reference, side by side. You record a human decision and, if useful, a suggested corrected answer. The dashboard only reads recorded files. It does not call Apertus, search the dataset or need a GPU, and it never changes the saved run.
 
 This is **SAVED RUN REVIEW**: recorded results, not a fresh LIVE answer and not a DEMO example.
 
@@ -8,7 +8,7 @@ This is **SAVED RUN REVIEW**: recorded results, not a fresh LIVE answer and not 
 
 - Install the project as described in the [README](../README.md) (`uv sync --locked`).
 - Ask the run's owner for a private copy of a completed development run, for example `j4-development-coverage-01`, and place it in `runs/`. Saved runs and exports are ignored by Git; never commit them.
-- Only **development** runs can be opened. The dashboard refuses other splits and never reads the evaluation questions.
+- By default only **development** runs can be opened. An explicit `--allow-evaluation` option permits review of an evaluation split that has already been used. Do not enable it for an untouched held-out test.
 
 ## Start
 
@@ -17,6 +17,14 @@ uv run --locked python review_app.py --run runs/j4-development-coverage-01 --por
 ```
 
 Open `http://127.0.0.1:7862` and click **Load**. The app listens only on your own computer and has no public share link. Use a different `--port` if 7862 is busy; the live explorer (`app.py`) uses 7860, so both can run at once. After restarting the app, click **Load** again.
+
+To select among completed runs in a folder, including an already-used evaluation split:
+
+```bash
+uv run --locked python review_app.py --runs-root runs --allow-evaluation --port 7862
+```
+
+The selector lists immediate completed run folders, not descendants of `_archive/` or review-export folders. Choose a run and click **Load**; development and evaluation references are selected from that run's own snapshot. Twenty questions per model plus thirty per model are100 saved outputs, not100 different questions. The separate100-document dataset audit is not performed here. A manual run path still works.
 
 If loading fails, the page clears and explains why. **Run changed or incomplete** means a file no longer matches the run's seal (`_COMPLETE.json`); ask for a fresh copy instead of editing it.
 
@@ -27,7 +35,7 @@ If loading fails, the page clears and explains why. **Run changed or incomplete*
 - **Question and model answer:** the answer exactly as generated, with the backend status and message.
 - **Draft reference:** the required facts and known source quotations. It is a draft for checking, not approved truth.
 - **Original evidence delivered to the model:** the passages Apertus actually received, with record ID, survey question and archive reference. Spelling, accents and editorial markers such as `$` and `@` are shown as recorded. A missing page mapping is shown as *Page not verified*.
-- **Technical details** (closed by default): the recorded stages in order, calls, retries, timing and tokens, and the raw recorded files, including every request to and response from the model.
+- **Technical details** (closed by default): the recorded stages in order, calls, retries, timing and tokens, and the raw recorded files, including every request to and response from the model. Field bindings, bound evidence, answer parts, holds and completeness checks are available when recorded; missing files remain Unavailable.
 
 ## Review a case
 
@@ -48,7 +56,7 @@ While the form has **unsaved changes**, moving to another case, loading, resumin
 
 ### Example
 
-DEV-12 asks for the daily school duration **and** the two mornings-only days. The answer gives four hours but not the days, although the evidence contains *Donnerstag* and *Samstags*. Review: **Incorrect**, supported claims **1** (the four hours are right), note *Missing requested days*.
+DEV-12 asks for the daily school duration **and** the two mornings-only days. An older run gives four hours but not the days, although the evidence contains *Donnerstag* and *Samstags*. That older response is incomplete. Later runs may already include both days: judge the actual selected response rather than copying the example's verdict.
 
 ## Export and resume
 
