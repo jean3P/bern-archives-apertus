@@ -7,7 +7,8 @@ import httpx
 import pytest
 
 from contracts import validate_response
-from core.answering import retrieval_schema, run_answer, strict_json, validate_plan
+from core.answering import (ANSWER_INSTRUCTIONS, retrieval_instructions, retrieval_schema,
+                            run_answer, strict_json, validate_plan)
 from core.config import Settings
 from core.evidence import explicit_codes, make_packet, validate_answer
 from core.policy import SCHEMA_VERSION, SQL_SHA256
@@ -41,12 +42,11 @@ def answer(record_id="stapfer:answer:901", quote=PASSAGE):
         "citations": [{"record_id": record_id, "quote": quote}]}], "message": ""}
 
 
-@pytest.fixture
-def dataset(tmp_path):
+def make_synthetic_dataset(tmp_path, records, catalogue=CATALOGUE):
     directory = tmp_path / "synthetic-data"
     directory.mkdir()
-    rows = {"documents": [{"transcription_id": 101}], "questions": CATALOGUE,
-        "answers": [source(), source(902, question_id=2)], "schools": [], "places": [],
+    rows = {"documents": [{"transcription_id": 101}], "questions": catalogue,
+        "answers": records, "schools": [], "places": [],
         "teachers": [], "school_teachers": []}
     build_index(directory / "search.sqlite3", rows, SQL_SHA256)
     manifest = {"test_fixture": True, "source_sha256": SQL_SHA256, "schema_version": SCHEMA_VERSION}
@@ -56,6 +56,11 @@ def dataset(tmp_path):
     (directory / "_SUCCESS.json").write_text(json.dumps({"status": "completed",
         "source_sha256": SQL_SHA256, "artifact_sha256": hashes}), encoding="utf-8")
     return directory
+
+
+@pytest.fixture
+def dataset(tmp_path):
+    return make_synthetic_dataset(tmp_path, [source(), source(902, question_id=2)])
 
 
 def transport_for(replies, requests, *, finish="stop", status=200):
@@ -272,3 +277,135 @@ def test_archival_instructions_stay_inside_data_and_no_tool_calls_are_requested(
     assert "untrusted data" in ANSWER_INSTRUCTIONS and "no tools" in ANSWER_INSTRUCTIONS
     assert included["stapfer:answer:901"]["record"]["pdf_page_index"] is None
     # This checks packaging/policy, not empirical model resistance to injection.
+
+
+def test_literal_hit_does_not_bypass_complete_multipart_routing(tmp_path):
+    question = "What are the teacher age and child count?"
+    age = question + " Teacher age is fifty-eight."
+    family = "The teacher has eight children."
+    catalogue = [dict(CATALOGUE[0], text_original="Teacher age"),
+                 dict(CATALOGUE[1], text_original="Teacher family")]
+    directory = make_synthetic_dataset(tmp_path,
+        [source(text=age), source(902, question_id=2, text=family)], catalogue)
+    # This literal FTS hit has only the first answer, despite matching all question words.
+    from core.search import search_records
+    assert [card["record_id"] for card in search_records(question, 101, data_dir=directory)] == ["stapfer:answer:901"]
+    reply = {"status": "answered", "message": "", "claims": [
+        {"text": "The teacher is fifty-eight.", "citations": [{"record_id": "stapfer:answer:901", "quote": age}]},
+        {"text": "The teacher has eight children.", "citations": [{"record_id": "stapfer:answer:902", "quote": family}]}]}
+    requests = []
+    result, path = run_answer(question, 101, data_dir=directory, out=tmp_path / "multipart",
+        transport=transport_for([{"question_codes": ["I.1", "I.2"]}, reply], requests))
+    assert result["status"] == "answered" and len(requests) == 2
+    route_payload = json.loads(requests[0]["messages"][1]["content"])
+    assert set(route_payload) == {"question", "transcription_id", "catalogue"}
+    assert route_payload["question"] == question and route_payload["transcription_id"] == 101
+    assert {card["record_id"] for card in result["sources"]} == {"stapfer:answer:901", "stapfer:answer:902"}
+    delivered = json.loads((path / "evidence.json").read_text())["packet"]
+    assert {group["passage"] for group in delivered} == {age, family}
+    assert "fifty-eight" in result["answer"] and "eight children" in result["answer"]
+    # Replies are authored mocks: this tests routing/transport, not model facet selection.
+
+
+@pytest.mark.parametrize("scoped", [True, False])
+def test_both_router_profiles_request_all_facets_with_original_bounds(scoped):
+    prompt = retrieval_instructions(scoped=scoped)
+    assert "every independently requested facet" in prompt
+    assert "union of relevant catalogue codes" in prompt and "three-code bound" in prompt
+    assert "untrusted data" in prompt
+    schema = retrieval_schema(CATALOGUE, scoped=scoped)
+    assert schema["properties"]["question_codes"]["maxItems"] == 3
+    if scoped:
+        assert set(schema["properties"]) == {"question_codes"}
+        assert "source answer IDs" in prompt
+    else:
+        assert schema["properties"]["queries"]["maxItems"] == 3
+        assert "eight words" in prompt and "160 characters" in prompt
+
+
+def test_answer_request_carries_generic_coverage_rules_not_reference_fields(dataset, tmp_path):
+    requests = []
+    result, _ = run_answer("I.1: give the original wording and relevant exceptions", 101,
+        data_dir=dataset, out=tmp_path / "coverage-policy",
+        transport=transport_for([answer()], requests))
+    assert result["status"] == "answered" and len(requests) == 1
+    assert requests[0]["messages"][0]["content"] == ANSWER_INSTRUCTIONS
+    for rule in ("every requested fact", "only inside a citation quote", "qualifications",
+                 "historical spellings and number words", "simple arithmetic",
+                 "original term", "specific missing or conflicting part"):
+        assert rule in ANSWER_INSTRUCTIONS
+    payload = json.loads(requests[0]["messages"][1]["content"])
+    assert set(payload) == {"question", "transcription_id", "evidence", "evidence_is_not_a_complete_census"}
+    assert requests[0]["max_tokens"] == 512
+    # A policy in a request is not evidence that a real reply follows it.
+
+
+def test_compatible_arithmetic_reply_is_preserved_not_computed_or_substituted_by_software(tmp_path):
+    passage = "Early lesson: four hours. Later lesson: two hours."
+    directory = make_synthetic_dataset(tmp_path, [source(text=passage)])
+    reply = {"status": "answered", "message": "", "claims": [{
+        "text": "The lessons last four and two hours; calculated total: six hours.",
+        "citations": [{"record_id": "stapfer:answer:901", "quote": passage}]}]}
+    requests = []
+    result, path = run_answer("I.1: give both durations and their total", 101,
+        data_dir=directory, out=tmp_path / "arithmetic",
+        transport=transport_for([reply], requests))
+    assert result["status"] == "answered" and len(requests) == 1
+    assert json.loads((path / "validated_claims.json").read_text()) == reply
+    assert result["answer"].startswith(reply["claims"][0]["text"])
+    assert "cite the passages supplying the operands" in requests[0]["messages"][0]["content"]
+    # This fixture does not establish real model arithmetic or semantic validation.
+
+
+def test_missing_arithmetic_operand_remains_a_scoped_nonanswer(tmp_path):
+    directory = make_synthetic_dataset(tmp_path, [source(text="Only the early lesson is recorded: four hours.")])
+    reply = {"status": "insufficient_evidence", "claims": [],
+             "message": "The later lesson duration is not supplied, so a total cannot be calculated."}
+    requests = []
+    result, path = run_answer("I.1: give the total early and later lesson duration", 101,
+        data_dir=directory, out=tmp_path / "missing-operand",
+        transport=transport_for([reply], requests))
+    assert result["status"] == "insufficient_evidence" and result["answer"] is None
+    assert result["sources"] and result["message"] == reply["message"]
+    assert json.loads((path / "summary.json").read_text())["format_retries"] == 0
+    assert "Do not invent a missing operand" in ANSWER_INSTRUCTIONS
+
+
+def test_natural_routing_and_one_shared_answer_retry_remain_three_posts(dataset, tmp_path):
+    requests = []
+    result, path = run_answer("Testville", 101, data_dir=dataset, out=tmp_path / "coverage-retry",
+        transport=transport_for([{"question_codes": ["I.1"]}, answer(quote="invented"), answer()], requests))
+    assert result["status"] == "answered" and len(requests) == 3
+    assert [request["max_tokens"] for request in requests] == [180, 512, 512]
+    summary = json.loads((path / "summary.json").read_text())
+    assert summary["generation_posts_attempted"] == 3 and summary["format_retries"] == 1
+    assert "invented" in (path / "events.jsonl").read_text()
+
+
+def test_empty_route_can_fall_back_to_actual_literal_evidence(dataset, tmp_path):
+    requests = []
+    result, _ = run_answer("Testville", 101, data_dir=dataset, out=tmp_path / "literal-fallback",
+        transport=transport_for([{"question_codes": []}, answer()], requests))
+    assert result["status"] == "answered" and len(requests) == 2
+    assert requests[0]["response_format"]["json_schema"]["name"] == "retrieval_plan"
+
+
+def test_no_rewrite_diagnostic_keeps_literal_search_without_router(dataset, tmp_path):
+    requests = []
+    result, _ = run_answer("Testville", 101, data_dir=dataset, rewrite=False,
+        out=tmp_path / "literal-only", transport=transport_for([answer()], requests))
+    assert result["status"] == "answered" and len(requests) == 1
+    assert requests[0]["response_format"]["json_schema"]["name"] == "cited_answer"
+
+
+def test_implementation_record_binds_both_router_prompts_and_coverage_version(dataset, tmp_path):
+    requests = []
+    _, path = run_answer("I.1?", 101, data_dir=dataset, out=tmp_path / "coverage-version",
+        transport=transport_for([answer()], requests))
+    implementation = json.loads((path / "implementation.json").read_text())
+    assert implementation["version"] == "cited-answer-v2-question-coverage"
+    assert implementation["mechanical_citation_checks_only"] is True
+    assert implementation["answer_instructions_sha256"] == hashlib.sha256(ANSWER_INSTRUCTIONS.encode()).hexdigest()
+    for mode, scoped in (("scoped", True), ("global", False)):
+        assert implementation["retrieval_instructions_sha256"][mode] == hashlib.sha256(
+            retrieval_instructions(scoped=scoped).encode()).hexdigest()
