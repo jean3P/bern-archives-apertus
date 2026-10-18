@@ -44,4 +44,4 @@ Model deployment is managed separately by its operator. The optional service uti
 
 ## Continue development
 
-J2 import/export/search implementation is prepared but unexecuted; follow [J2 commands](J2.md) to build and verify a real dataset before using source search. Evidence-grounded generation and UI remain separate tasks. `answer_question` deliberately raises until J3. Use labelled fixtures for interface development; do not present them as live model results.
+Follow [J2 commands](J2.md) to build and verify a completed dataset before source search. The J3 cited-answer service and [M1 live evidence explorer](M1.md) are now connected: run `uv run --locked python app.py` and use LIVE for actual retrieval/model answers, or explicitly choose DEMO for fixture-only interface work. Keep the model endpoint private and reachable. J4 evaluation is a separate intentional command; starting the UI does not run a benchmark or establish general answer accuracy.
