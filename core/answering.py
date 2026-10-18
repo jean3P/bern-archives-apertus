@@ -294,7 +294,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "mechanical_citation_checks_only": True,
         **({"retrieval_mode": "entity", "retrieval_version": er.VERSION,
             "entity_instructions_sha256": hashlib.sha256(er.INSTRUCTIONS.encode()).hexdigest()}
-           if retrieval_mode == "entity" else {}),
+           if retrieval_mode == "entity" or (coverage and transcription_id is None) else {}),
         **({"retrieval_mode": "coverage", "coverage_version": ac.VERSION,
             "coverage_plan_tokens": ac.PLAN_TOKENS, "coverage_answer_tokens": ac.ANSWER_TOKENS,
             "coverage_prompt_sha256": {"plan": hashlib.sha256(ac.PLAN_INSTRUCTIONS.encode()).hexdigest(),

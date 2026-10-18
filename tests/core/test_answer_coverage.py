@@ -76,7 +76,7 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
     raw = answer()
     bad = deepcopy(raw)
     bad["r2"]["spans"] = []
-    replies, requests = iter([plan(), bad, raw]), []
+    replies, requests = iter([{"r1": ["III.11.d"], "r2": ["III.11.e"]}, bad, raw]), []
     def wire(request):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": Settings().model}]})
@@ -105,3 +105,36 @@ def test_original_markup_is_retained_byte_for_byte():
     spans[0]["quote"] = included["stapfer:answer:904"]["delivered_passage"] = original
     value = ac.normalize(answer(), plan(), spans, included)
     assert value["claims"][0]["citations"][0]["quote"] == original
+
+
+def test_literal_units_do_not_invent_tasks_and_preserve_exact_date_format():
+    units = ac.literal_requirements("According to IV.14, what fees for day pupils, evening pupils and night pupils? Preserve periods.")
+    assert [u["label"] for u in units] == ["what fees for day pupils", "evening pupils", "night pupils? Preserve periods."]
+    assert len(ac.literal_requirements("Using only III.11.d, what is the exact date of birth, including day, month and year?")) == 1
+    assert len(ac.literal_requirements("Quel âge a le maître et quels âges ont ses fils ?")) == 2
+    assert len(ac.literal_requirements("According to II.5, which five skills precede the memorisation list?")) == 1
+
+
+def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
+    data = make_data(tmp_path)
+    from core.entity_retrieval import INSTRUCTIONS
+    replies = iter([{"entities": [], "question_codes": ["I.1.d"]},
+        {"r1": {"supported": True, "answer": "The district is Foxtrot.", "spans": ["s2"], "reason": ""}}])
+    requests = []
+    def wire(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": Settings().model}]})
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={"model": Settings().model, "choices": [{
+            "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
+    question = "Which district contains Testville?"
+    response, out = run_answer(question, data_dir=data, out=tmp_path / "run", config=Settings(),
+        pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
+    assert response["status"] == "answered" and requests[0]["messages"][0]["content"] == INSTRUCTIONS
+    case = {"case_id": "SYNTHETIC", "topic": "synthetic", "input": {"question": question,
+        "transcription_id": None}, "expected_status": "answered", "evidence": [{"answer_id": 902,
+        "quote": "District Foxtrot."}]}
+    inspected = inspect_case(case, out, {"attempted": True, "response": response},
+        {"alternatives": []}, "software_fixture", pipeline="apertus-qualified")
+    assert inspected["protocol_valid"] and inspected["mechanical_citation_valid"]
