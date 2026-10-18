@@ -18,6 +18,9 @@ ANSWER_TOKENS = 1024
 PLAN_INSTRUCTIONS = """Bind each requested detail to its survey catalogue FIELD, not to a guessed answer.
 Use the complete original question to interpret every detail and its subject.
 Return the supplied r1/r2/... keys, each with ONE exact catalogue code or [] if unresolved.
+You have the catalogue QUESTIONS, not their archival answers. Select the field where the
+requested fact would be recorded. Do not require its factual answer to appear in the catalogue;
+absence of answer text at this routing stage is NOT a reason to return [].
 Match the requested attribute: place, district and canton are different; teacher family is
 different from school pupils. Read the field's original/French question and parent context.
 Never select extra fields just because their answers might mention similar words.
