@@ -11,7 +11,7 @@ from core import entity_retrieval as er
 from core import answer_qualifications as aq
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "requested-details-v6-parent-scoped-family"
+VERSION = "requested-details-v7-focused-answers"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 768
 PLAN_INSTRUCTIONS = """Select catalogue fields for each supplied literal question unit.
@@ -92,7 +92,12 @@ def literal_requirements(question):
     """
     body = re.sub(r"^(?:According to|Using only|Selon)\s+[^,]+,\s*", "", question, flags=re.I)
     exact_date = bool(re.search(r"\b(?:date of birth|date de naissance)\b", body, re.I))
+    # Post-question directives constrain each answer, rather than becoming a
+    # fourth artificial population (e.g. "Preserve amounts and periods").
+    if "?" in body and not body.split("?", 1)[1].strip().endswith("?"):
+        body = body.split("?", 1)[0] + "?"
     labels = [body] if exact_date else re.split(r",\s*|\s+(?:and|et)\s+", body, flags=re.I)
+    labels = [re.sub(r"^(?:and|et)\s+", "", label.strip(), flags=re.I) for label in labels]
     labels = list(dict.fromkeys(label.strip() for label in labels if label.strip()))
     if not 1 <= len(labels) <= 5:
         raise ValueError("Question exceeds the five-unit coverage bound; simplify the question")
@@ -201,7 +206,7 @@ def answer_schema(plan, spans):
     answered = {"type": "object", "additionalProperties": False,
         "required": ["status", "claims", "message"], "properties": {
             "status": {"type": "string", "enum": ["answered"]},
-            "claims": {"type": "array", "minItems": 1, "maxItems": 5, "items": item},
+            "claims": {"type": "array", "minItems": 1, "maxItems": 1, "items": item},
             "message": {"type": "string", "enum": [""]}}}
     insufficient = deepcopy(answered)
     insufficient["properties"]["status"]["enum"] = ["insufficient_evidence"]
@@ -235,6 +240,56 @@ def normalize(raw, plan, spans, included):
             "quote": bank[cite["span_id"]]["quote"]} for cite in item["citations"]]})
     value = {"status": "answered", "claims": claims, "message": ""}
     return validate_answer(value, included)
+
+
+def focused_payload(question, transcription_id, requirement, packet, spans):
+    return {"question": requirement["label"], "original_question": question,
+        "current_detail": requirement, "transcription_id": transcription_id,
+        "task": "Answer ONLY the current question detail. Use the original question for subject, shared qualifiers and requested format; do not merely repeat a question.",
+        "evidence": packet, "citation_spans": spans, "evidence_is_not_a_complete_census": True}
+
+
+def combine_parts(parts, included):
+    missing = [part["normalized"]["message"] for part in parts
+               if part["normalized"]["status"] == "insufficient_evidence"]
+    value = {"status": "insufficient_evidence" if missing else "answered",
+        "claims": [] if missing else [claim for part in parts for claim in part["normalized"]["claims"]],
+        "message": " ".join(dict.fromkeys(missing))[:500]}
+    return validate_answer(value, included)
+
+
+def answer_parts(question, transcription_id, plan, packet, included, get_client, log):
+    from core.answering import call_model, strict_json
+    spans, parts = span_bank(packet), []
+    # Reserve the hard three-POST total, including routing. No hidden per-part
+    # repair allowances; the one retry is shared by the entire instruction.
+    if log.calls + len(plan["requirements"]) > log.max_posts:
+        raise ValueError("Question needs more focused answers than the shared POST budget permits")
+    for requirement in plan["requirements"]:
+        subplan = {"entities": [], "requirements": [requirement]}
+        payload = focused_payload(question, transcription_id, requirement, packet, spans)
+        while True:
+            messages = [{"role": "system", "content": ANSWER_INSTRUCTIONS},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
+            content = call_model(get_client(), messages, answer_schema(subplan, spans), "cited_answer", ANSWER_TOKENS, log)
+            try:
+                raw = strict_json(content)
+                normalized = normalize(raw, subplan, spans, included)
+                break
+            except ValueError as error:
+                log.record({"event": "answer_validation_failed", "part": len(parts) + 1,
+                    "reason": str(error), "raw_content": content})
+                if log.repairs >= 1 or log.calls + len(plan["requirements"]) - len(parts) > log.max_posts:
+                    raise
+                log.repairs += 1
+                payload["format_feedback"] = str(error)
+        parts.append({"requirement": requirement, "raw": raw, "normalized": normalized,
+                      "generation_post": log.calls})
+    value = combine_parts(parts, included)
+    log.write("coverage_answer.json", {"parts": parts})
+    log.write("quote_translation.json", {"version": VERSION, "spans": spans,
+        "normalized": value, "raw_model_quotes_generated": False})
+    return value
 
 
 def receipts_valid(saved, events, included):
@@ -297,11 +352,23 @@ def receipts_valid(saved, events, included):
             return False
     if not included:
         return not answers
-    spans = span_bank(saved("evidence.json", {})["packet"])
-    payload = json.loads(answers[-1][0]["messages"][1]["content"]) if answers else {}
-    return bool(answers and payload.get("requested_details") == [item["label"] for item in plan["requirements"]]
-        and payload.get("citation_spans") == spans
-        and answers[-1][0]["messages"][0]["content"] == ANSWER_INSTRUCTIONS
-        and answers[-1][0]["response_format"]["json_schema"]["schema"] == answer_schema(plan, spans)
-        and answers[-1][1] == saved("coverage_answer.json", None)
-        and normalize(answers[-1][1], plan, spans, included) == saved("validated_claims.json", None))
+    packet = saved("evidence.json", {})["packet"]
+    spans = span_bank(packet)
+    parts = saved("coverage_answer.json", {}).get("parts", [])
+    if len(parts) != len(plan["requirements"]) or not answers:
+        return False
+    calls = [e for e in events if e.get("event") == "generation_request"]
+    for part, requirement in zip(parts, plan["requirements"], strict=True):
+        subplan = {"entities": [], "requirements": [requirement]}
+        body = calls[part["generation_post"] - 1]["request"]
+        payload = json.loads(body["messages"][1]["content"])
+        payload.pop("format_feedback", None)
+        matching = [raw for request_body, raw in answers if request_body == body]
+        if (part["requirement"] != requirement or payload != focused_payload(request["question"],
+                request.get("transcription_id"), requirement, packet, spans)
+                or body["messages"][0]["content"] != ANSWER_INSTRUCTIONS
+                or body["response_format"]["json_schema"]["schema"] != answer_schema(subplan, spans)
+                or not matching or matching[-1] != part["raw"]
+                or normalize(part["raw"], subplan, spans, included) != part["normalized"]):
+            return False
+    return combine_parts(parts, included) == saved("validated_claims.json", None)

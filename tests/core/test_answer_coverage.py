@@ -77,10 +77,11 @@ def test_explicit_scope_cannot_be_expanded_to_find_an_unrequested_attribute():
 
 def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path):
     data = make_data(tmp_path)
-    raw = answer()
+    raw = {"status": "answered", "message": "", "claims": [
+        {"text": "Three family children.", "citations": [{"span_id": "s1"}]}]}
     bad = deepcopy(raw)
-    bad["claims"][1]["citations"] = []
-    replies, requests = iter([{"r1": ["III.11.d"], "r2": []}, bad, raw]), []
+    bad["claims"][0]["citations"] = []
+    replies, requests = iter([{"r1": []}, bad, raw]), []
     def wire(request):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": Settings().model}]})
@@ -88,14 +89,14 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
         requests.append(body)
         return httpx.Response(200, json={"model": Settings().model, "choices": [{
             "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
-    question = "How old is the teacher and how many family children?"
+    question = "How many children does the teacher have?"
     response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=Settings(),
         pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
     assert response["status"] == "answered" and "Three family" in response["answer"]
     assert [body["max_tokens"] for body in requests] == [ac.PLAN_TOKENS, ac.ANSWER_TOKENS, ac.ANSWER_TOKENS]
-    assert json.loads((out / "coverage_answer.json").read_text()) == raw
+    assert json.loads((out / "coverage_answer.json").read_text())["parts"][0]["raw"] == raw
     assert json.loads((out / "coverage_related_fields.json").read_text())["added_catalogue_codes"] == ["III.11.e"]
-    assert json.loads((out / "coverage_route.json").read_text())["r2"] == []
+    assert json.loads((out / "coverage_route.json").read_text())["r1"] == []
     case = {"case_id": "SYNTHETIC", "topic": "synthetic", "input": {"question": question,
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 905,
         "quote": "Three family children."}]}
@@ -115,7 +116,7 @@ def test_original_markup_is_retained_byte_for_byte():
 
 def test_literal_units_do_not_invent_tasks_and_preserve_exact_date_format():
     units = ac.literal_requirements("According to IV.14, what fees for day pupils, evening pupils and night pupils? Preserve periods.")
-    assert [u["label"] for u in units] == ["what fees for day pupils", "evening pupils", "night pupils? Preserve periods."]
+    assert [u["label"] for u in units] == ["what fees for day pupils", "evening pupils", "night pupils?"]
     assert len(ac.literal_requirements("Using only III.11.d, what is the exact date of birth, including day, month and year?")) == 1
     assert len(ac.literal_requirements("Quel âge a le maître et quels âges ont ses fils ?")) == 2
     assert len(ac.literal_requirements("According to II.5, which five skills precede the memorisation list?")) == 1

@@ -434,6 +434,13 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             result = {"mode": "live", "status": "insufficient_evidence", "answer": None,
                       "sources": [], "message": reason or
                       "No useful passages were retrieved within this search scope and budget; this does not establish absence from the archive."}
+        elif coverage:
+            started = time.perf_counter()
+            value = ac.answer_parts(question, transcription_id, coverage_plan, packet, included, get_client, log)
+            repairs = log.repairs
+            log.write("validated_claims.json", value)
+            result = format_answer(value, included)
+            timings["answer_seconds"] = time.perf_counter() - started
         elif per_part:
             started = time.perf_counter()
             parts = hybrid_stage(get_client, "cited_answer", fa.ANSWER_INSTRUCTIONS,
