@@ -17,6 +17,11 @@ STATUS_LABELS = {
     "error": "Error — no answer was produced",
 }
 
+
+class InputValidationError(ValueError):
+    """An authored input hint that is safe to display to the user."""
+
+
 THEME = gr.themes.Default().set(
     block_title_text_size="*text_lg",
     block_title_text_weight="600",
@@ -96,7 +101,10 @@ def parse_transcription_id(value):
         value = int(value.strip())
     if (type(value) not in (int, float) or not math.isfinite(value)
             or value != int(value) or not 1 <= value <= 2**63 - 1):
-        raise ValueError("Transcription ID must be a positive whole number, or blank.")
+        raise InputValidationError(
+            "Enter a positive whole transcription ID (for example, 16), "
+            "or leave it blank to search without a transcription filter."
+        )
     return int(value)
 
 
@@ -118,10 +126,10 @@ def on_ask(question, transcription_id, scenario="answered", mode="demo"):
             response = load_demo_response(scenario)
         elif mode == "live":
             if not isinstance(question, str) or not question.strip() or len(question) > 2000:
-                raise ValueError("Enter a question of 1–2000 characters.")
+                raise InputValidationError("Enter a question of 1–2000 characters.")
             response = service.answer_question(question, parse_transcription_id(transcription_id))
         else:
-            raise ValueError("Choose LIVE or DEMO mode.")
+            raise InputValidationError("Choose LIVE or DEMO mode.")
         validate_response(response)
         if response["mode"] != mode:
             raise ValueError("Response mode does not match the selected mode.")
@@ -130,8 +138,12 @@ def on_ask(question, transcription_id, scenario="answered", mode="demo"):
         answer_text = response["answer"] or ""
         source_text = "<hr>".join(format_source(c) for c in response["sources"])
         return banner, status_box(response["status"], status_text), answer_text, source_text
+    except InputValidationError as exc:
+        banner = DEMO_BANNER if mode == "demo" else LIVE_BANNER
+        status_text = f"{STATUS_LABELS['error']}\n{exc}"
+        return banner, status_box("error", status_text), "", ""
     except Exception as exc:
-        detail = str(exc) if mode == "demo" else f"{type(exc).__name__}; check the input and service configuration."
+        detail = str(exc) if mode == "demo" else "Please try again or ask the operator to check the service configuration."
         status_text = f"{STATUS_LABELS['error']}\nThe request failed: {detail}"
         banner = DEMO_BANNER if mode == "demo" else LIVE_BANNER
         return banner, status_box("error", status_text), "", ""
@@ -143,7 +155,10 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
 
     mode = gr.Radio(choices=["live", "demo"], value="live", label="Mode")
     question = gr.Textbox(label="Your question")
-    transcription_id = gr.Number(label="Transcription ID (optional)", precision=None)
+    transcription_id = gr.Number(
+        label="Transcription ID (optional)", value=None, precision=None,
+        info="Leave blank for no transcription filter. Example: 16 for the Hörndli transcription.",
+    )
     scenario = gr.Dropdown(
         choices=["answered", "insufficient", "error"],
         value="answered",
