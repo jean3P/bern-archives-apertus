@@ -152,7 +152,8 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
 def qualifications_receipts_valid(saved, events, delivered):
     from core import answer_qualifications as aq
     implementation = saved("implementation.json", {})
-    if (implementation.get("version") != aq.VERSION or implementation.get("model") != aq.MODEL
+    version = implementation.get("version")
+    if (version not in (aq.VERSION, aq.LEGACY_VERSION) or implementation.get("model") != aq.MODEL
             or saved("input.json", {}).get("pipeline") != "apertus-qualified"
             or saved("summary.json", {}).get("pipeline") != "apertus-qualified"):
         return False
@@ -186,7 +187,7 @@ def qualifications_receipts_valid(saved, events, delivered):
     if not delivered:
         return not answers
     raw = strict_loads(answers[-1])
-    return raw == saved("qualification_answer.json", None) and aq.normalize(raw, delivered) == saved("validated_claims.json", None)
+    return raw == saved("qualification_answer.json", None) and aq.normalize(raw, delivered, version) == saved("validated_claims.json", None)
 
 
 def parts_receipts_valid(saved, events, delivered):

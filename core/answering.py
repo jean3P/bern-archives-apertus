@@ -257,7 +257,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if qualified:
         from core import answer_qualifications as aq
         modules.append(Path(aq.__file__))
-    answer_instruction = ANSWER_INSTRUCTIONS + aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
+    answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
         modules.extend([Path(qe.__file__), Path(__file__).with_name("config.py")])
@@ -275,7 +275,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
         "mechanical_citation_checks_only": True,
-        **({"pipeline": pipeline, "qualification_field": "string_appended_to_same_claim",
+        **({"pipeline": pipeline, "qualification_field": aq.OUTPUT_MODE,
             "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "answer_token_limit": 512, "model": aq.MODEL} if qualified else {}),
         **({"pipeline": pipeline, "max_generation_posts": 3, "max_shared_validation_retries": 1,

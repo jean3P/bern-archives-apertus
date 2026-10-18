@@ -22,8 +22,7 @@ RECORD = {"record_id": "stapfer:answer:901", "answer_id": 901, "transcription_id
 
 
 def proposed():
-    return {"status": "answered", "claims": [{"text": "Seven tokens per term.",
-        "qualifications": "Actual payment is irregular.",
+    return {"status": "answered", "claims": [{"text": "Seven tokens per term. Actual payment is irregular.",
         "citations": [{"record_id": RECORD["record_id"], "quote": TEXT}]}],
         "message": "The source distinguishes the obligation from actual payment."}
 
@@ -32,13 +31,21 @@ def included():
     return {RECORD["record_id"]: {"record": RECORD, "delivered_passage": TEXT}}
 
 
-def test_qualification_is_visible_and_benign_message_does_not_cause_error():
+def test_original_schema_and_benign_message_are_preserved():
     normalized = aq.normalize(proposed(), included())
     assert normalized["claims"][0]["text"] == "Seven tokens per term. Actual payment is irregular."
     assert normalized["message"] == proposed()["message"]
     schema = aq.answer_schema(ANSWER_SCHEMA)
-    assert "qualifications" in schema["properties"]["claims"]["items"]["required"]
+    assert schema == ANSWER_SCHEMA
     assert "qualifications" not in ANSWER_SCHEMA["properties"]["claims"]["items"]["required"]
+
+
+def test_saved_v5_replies_keep_their_original_offline_normalization():
+    legacy = proposed()
+    legacy["claims"][0].update(text="Seven tokens per term.", qualifications="Actual payment is irregular.")
+    assert aq.normalize(legacy, included(), aq.LEGACY_VERSION) == proposed()
+    with pytest.raises(ValueError):
+        aq.normalize(legacy, included())
 
 
 @pytest.mark.parametrize("mutation", ["quote", "id", "length"])
@@ -49,7 +56,7 @@ def test_original_citation_and_length_guards_remain(mutation):
     elif mutation == "id":
         value["claims"][0]["citations"][0]["record_id"] = "stapfer:answer:999"
     else:
-        value["claims"][0]["text"] = "x" * 590
+        value["claims"][0]["text"] = "x" * 601
     with pytest.raises(ValueError):
         aq.normalize(value, included())
 
