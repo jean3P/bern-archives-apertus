@@ -1,14 +1,16 @@
 """Concise claims and abstention messages; retain earlier offline replay."""
 
 from copy import deepcopy
+import re
 
 from core.evidence import validate_answer
 
 LEGACY_VERSION = "cited-answer-v5-visible-qualifications"
 ORIGINAL_VERSION = "cited-answer-v6-concise-original-schema"
 CONCISE_VERSION = "cited-answer-v6.1-claims-message-separation"
-VERSION = "cited-answer-v6.2-subject-binding-original-terms"
-SUPPORTED_VERSIONS = (VERSION, CONCISE_VERSION, ORIGINAL_VERSION, LEGACY_VERSION)
+ROUTING_VERSION = "cited-answer-v6.2-subject-binding-original-terms"
+VERSION = "cited-answer-v6.3-catalogue-context-source-parentheticals"
+SUPPORTED_VERSIONS = (VERSION, ROUTING_VERSION, CONCISE_VERSION, ORIGINAL_VERSION, LEGACY_VERSION)
 MODEL = "swiss-ai/Apertus-v1.5-8B"
 OUTPUT_MODE = "original_claims_answered_message_empty"
 ROUTING_INSTRUCTIONS = """ In a multipart question, carry the explicitly named subject across
@@ -33,6 +35,7 @@ When an original term is requested, copy its original wording WITHOUT a translat
 parenthetical gloss or inferred frequency. An unfamiliar word is not missing information.
 Only explain its meaning if explicitly requested AND defined in the supplied evidence;
 otherwise keep the original term without interpreting it. No external linguistic knowledge.
+If you use parentheses, their contents must be copied verbatim from a cited quotation.
 Use only explicit compatible operands for requested arithmetic; label a derived result and cite them.
 Do not add commentary about what the passage says, restate the question, or repeat source metadata.
 Do not turn a reported fact into a rule. A linked school ID is context, not verified answer ownership;
@@ -49,7 +52,7 @@ An exact quote alone does not prove a claim follows. No external knowledge, inve
 
 def answer_schema(original, version=VERSION):
     schema = deepcopy(original)
-    if version in (VERSION, CONCISE_VERSION):
+    if version in (VERSION, ROUTING_VERSION, CONCISE_VERSION):
         answered, insufficient = deepcopy(schema), deepcopy(schema)
         answered["properties"]["status"] = {"type": "string", "enum": ["answered"]}
         answered["properties"]["message"] = {"type": "string", "enum": [""]}
@@ -69,10 +72,18 @@ def answer_schema(original, version=VERSION):
 
 
 def normalize(value, included, version=VERSION):
-    if version in (VERSION, CONCISE_VERSION):
+    if version in (VERSION, ROUTING_VERSION, CONCISE_VERSION):
         if isinstance(value, dict) and value.get("status") == "answered" and value.get("message") != "":
             raise ValueError("Answered content belongs in cited claims; message must be empty")
-        return validate_answer(value, included)
+        checked = validate_answer(value, included)
+        if version == VERSION:
+            for claim in checked["claims"]:
+                for parenthetical in re.findall(r"\(([^()]*)\)", claim["text"]):
+                    if not parenthetical.strip() or not any(
+                            parenthetical in citation["quote"] for citation in claim["citations"]):
+                        raise ValueError("Parenthetical text must occur verbatim in a cited quotation. "
+                                         "Do not add an unsupported gloss or replace it with another interpretation.")
+        return checked
     if version == ORIGINAL_VERSION:
         return validate_answer(value, included)
     if version != LEGACY_VERSION:
