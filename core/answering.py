@@ -351,13 +351,17 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             log.write("question_catalogue.json", catalogue)
             catalogue_view = [{"code": row["question_number"],
                 "question": (row["text_original"] or "")[:130],
-                "french": (row["text_french"] or "")[:80]} for row in catalogue]
+                "french": (row["text_french"] or "")[:80]} for row in catalogue
+                if not (per_part and explicit) or row["question_number"] in explicit]
             interpretation = hybrid_stage(get_client if per_part else get_qwen_client, "question_interpretation",
                 fa.INTERPRET_INSTRUCTIONS if per_part else qe.INTERPRET_INSTRUCTIONS,
                 {"question": question, "transcription_id": transcription_id,
                  "explicit_question_codes": explicit, "catalogue": catalogue_view},
-                qe.interpretation_schema(catalogue, transcription_id is not None),
-                lambda value: qe.validate_interpretation(value, catalogue, transcription_id is not None, explicit))
+                (fa.interpretation_schema(catalogue, transcription_id is not None, explicit) if per_part else
+                 qe.interpretation_schema(catalogue, transcription_id is not None)),
+                lambda value: (fa.validate_interpretation(value, catalogue, transcription_id is not None,
+                                                        explicit, question) if per_part else
+                               qe.validate_interpretation(value, catalogue, transcription_id is not None, explicit)))
             facets = qe.bind_facets(interpretation)
             log.write("question_interpretation.json", {"model_output": interpretation, "facets": facets})
             prepared_plan = {"question_codes": interpretation["question_codes"]}

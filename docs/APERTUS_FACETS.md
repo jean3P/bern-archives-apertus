@@ -5,7 +5,9 @@ Select `--pipeline apertus-facets` to test explicit question parts without Qwen.
 selected. No model/service restart, dependency change, data rebuild or UI change is required.
 
 Apertus first identifies up to five requested parts with explicit subjects and up to three
-survey-code routes. It then receives the original retrieved evidence and returns one cited answer
+survey-code routes. Each request is a verbatim user-question span; explicit codes restrict the
+allowed routes. A clear interpretation uses JSON null, not a free-text claim of no ambiguity.
+It then receives the original retrieved evidence and returns one cited answer
 per part, with meaning-changing qualifications in a separate field. Software includes those
 qualifications in the displayed answer, validates exact quotes and per-part survey-code links,
 and rejects missing/duplicated parts. Missing evidence or material ambiguity remains unresolved.
@@ -33,7 +35,7 @@ uv run --locked python -m core.evaluate_cli run \
   --references evaluation/references/draft-v1 \
   --split development \
   --data-dir data/derived/j2-full \
-  --out runs/j4-development-apertus-parts-01 \
+  --out runs/j4-development-apertus-parts-02 \
   --allow-draft-references
 ```
 
@@ -41,6 +43,10 @@ This makes actual model requests, at most60 for20 questions. Compare all cases a
 coverage-only run, not just the known failures. Keep original runs/references unchanged. This is
 a draft development comparison, not held-out validation, human-approved gold or a document audit.
 Startup/serving readiness is not question accuracy. The100-document audit remains separate.
+
+The first `j4-development-apertus-parts-01` comparison was stopped and retained after repeated
+interpretation failures. Version4.1 constrains the requests to the user's actual wording and
+uses nullable ambiguity. Do not overwrite or report the stopped run as a complete model benchmark.
 
 Targeted offline checks for these changed contracts live in `tests/core/test_facet_answering.py`;
 running the entire software suite is not necessary for this bounded comparison. Do not describe

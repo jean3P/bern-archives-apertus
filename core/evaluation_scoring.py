@@ -192,7 +192,7 @@ def parts_receipts_valid(saved, events, delivered):
     catalogue = saved("question_catalogue.json", [])
     parsed = strict_loads(returned["question_interpretation"])
     fa.validate_interpretation(parsed, catalogue, request["transcription_id"] is not None,
-                               explicit_codes(request["question"], catalogue))
+                               explicit_codes(request["question"], catalogue), request["question"])
     if saved("question_interpretation.json", {}) != {"model_output": parsed, "facets": fa.bind_facets(parsed)}:
         return False
     if not delivered:

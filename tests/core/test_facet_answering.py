@@ -26,9 +26,25 @@ RECORD = {"record_id": "stapfer:answer:901", "answer_id": 901, "transcription_id
 
 
 def plan():
-    return {"question_codes": ["I.1"], "queries": [], "ambiguity": "", "facets": [
+    return {"question_codes": ["I.1"], "queries": [], "ambiguity": None, "facets": [
         {"subject": "keeper", "request": "age", "question_codes": ["I.1"]},
-        {"subject": "keeper family", "request": "number of children", "question_codes": ["I.1"]}]}
+        {"subject": "keeper family", "request": "family count", "question_codes": ["I.1"]}]}
+
+
+def test_interpretation_binds_requested_spans_and_literal_routes():
+    fa.validate_interpretation(plan(), CATALOGUE, True, ["I.1"], "Give keeper age and family count")
+    schema = fa.interpretation_schema(CATALOGUE, True, ["I.1"])
+    assert schema["properties"]["question_codes"]["items"]["enum"] == ["I.1"]
+    assert schema["properties"]["ambiguity"]["anyOf"][0] == {"type": "null"}
+    wrong = plan()
+    wrong["facets"][0]["request"] = "Find the catalogue code for age"
+    with pytest.raises(ValueError, match="verbatim"):
+        fa.validate_interpretation(wrong, CATALOGUE, True, ["I.1"], "Give keeper age and family count")
+    wrong = plan()
+    wrong["question_codes"].append("I.2")
+    wrong["facets"][1]["question_codes"].append("I.2")
+    with pytest.raises(ValueError, match="exactly"):
+        fa.validate_interpretation(wrong, CATALOGUE, True, ["I.1"], "Give keeper age and family count")
 
 
 def parts():
