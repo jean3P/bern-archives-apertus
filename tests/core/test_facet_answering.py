@@ -36,6 +36,9 @@ def test_interpretation_binds_requested_spans_and_literal_routes():
     schema = fa.interpretation_schema(CATALOGUE, True, ["I.1"])
     assert schema["properties"]["question_codes"]["items"]["enum"] == ["I.1"]
     assert schema["properties"]["ambiguity"]["anyOf"][0] == {"type": "null"}
+    punctuated = plan()
+    punctuated["facets"][0]["request"] = "Give keeper age?"
+    fa.validate_interpretation(punctuated, CATALOGUE, True, ["I.1"], "Give keeper age and family count")
     wrong = plan()
     wrong["facets"][0]["request"] = "Find the catalogue code for age"
     with pytest.raises(ValueError, match="verbatim"):

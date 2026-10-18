@@ -43,8 +43,9 @@ def validate_interpretation(value, catalogue, scoped, explicit=(), question=None
         raise ValueError("Use exactly the user's explicit survey routes, not neighboring fields")
     if question is not None:
         original = " ".join(question.casefold().split())
-        spans = [" ".join(facet["request"].casefold().split()) for facet in value["facets"]]
-        if len(set(spans)) != len(spans) or any(span not in original for span in spans):
+        # A copied clause may be terminated as a question without changing its wording.
+        spans = [" ".join(facet["request"].casefold().split()).rstrip("?.! ") for facet in value["facets"]]
+        if len(set(spans)) != len(spans) or any(not span or span not in original for span in spans):
             raise ValueError("Each request must be a distinct verbatim phrase from the user question")
     return value
 
