@@ -44,4 +44,4 @@ Model deployment is managed separately by its operator. The optional service uti
 
 ## Continue development
 
-The importer, public-data search, evidence-grounded generation and UI remain separate implementation tasks. `core.service` deliberately raises until those functions are implemented. Use the labelled fixtures for interface development; do not present them as live model results.
+J2 import/export/search implementation is prepared but unexecuted; follow [J2 commands](J2.md) to build and verify a real dataset before using source search. Evidence-grounded generation and UI remain separate tasks. `answer_question` deliberately raises until J3. Use labelled fixtures for interface development; do not present them as live model results.

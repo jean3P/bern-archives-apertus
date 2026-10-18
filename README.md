@@ -4,7 +4,7 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-This is the **J1 infrastructure scaffold**: uv project, shared response types, explicit demo fixtures, a configurable Apertus client and software tests. The public-data importer, real archival search/answer service and UI remain J2/J3/S1 work. The service stubs intentionally raise instead of returning a fabricated result. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
+J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2 import/export/SQLite-search code is now prepared on `jean/backend`, but has not been executed or tested.** Run the [J2 commands](docs/J2.md) to establish actual import/search results. Model-grounded archival answers and the UI remain J3/S1 work. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
@@ -44,6 +44,8 @@ bern-archives-apertus/
 ```
 
 `app.py` is an assigned future file, not a working application already present in this scaffold. The agreed callable boundary is `core.service.search_records` and `core.service.answer_question`, returning the shapes in `contracts.py`. UI examples are always marked `mode: demo`; live mode requires real backend data and model replies.
+
+J2 source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. Answer generation remains unimplemented until J3. See [J2 scope, policy, outputs and run commands](docs/J2.md).
 
 ## Avoid editing the same files
 
