@@ -1,4 +1,4 @@
-"""Private OpenAI-compatible Apertus connection, without automatic retries."""
+"""Configurable OpenAI-compatible Apertus connection, without automatic retries."""
 
 import time
 
@@ -10,7 +10,8 @@ from core.config import Settings
 class ApertusClient:
     def __init__(self, config: Settings, transport=None):
         self.config = config
-        self.http = httpx.Client(timeout=config.timeout, transport=transport, trust_env=False)
+        headers = {"Authorization": "Bearer " + config.api_key} if config.api_key else {}
+        self.http = httpx.Client(timeout=config.timeout, transport=transport, trust_env=False, headers=headers)
 
     def close(self):
         self.http.close()

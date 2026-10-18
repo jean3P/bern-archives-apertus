@@ -4,11 +4,11 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-This is the **J1 infrastructure scaffold**: uv project, shared response types, explicit demo fixtures, a private Apertus health client, owned H100 service helpers and software tests. The public-data importer, real archival search/answer service and UI remain J2/J3/S1 work. The service stubs intentionally raise instead of returning a fabricated result. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
+This is the **J1 infrastructure scaffold**: uv project, shared response types, explicit demo fixtures, a configurable Apertus client and software tests. The public-data importer, real archival search/answer service and UI remain J2/J3/S1 work. The service stubs intentionally raise instead of returning a fabricated result. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and authenticate to the private repository. Dyane98 must accept the collaborator invitation first.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and authenticate with an account that has access to the private repository.
 
 ```bash
 git clone https://github.com/jean3P/bern-archives-apertus.git
@@ -17,14 +17,16 @@ uv sync --locked
 uv run pytest -q
 ```
 
-Python 3.11.16 is selected by `.python-version`. `uv.lock` fixes package versions; only Jean changes shared dependencies. Gradio is included for the UI, but neither PyTorch nor model weights are installed into this project environment. The GPU model runs in its existing pinned container separately.
+Python 3.11.16 is selected by `.python-version`. `uv.lock` fixes package versions; only Jean changes shared dependencies. The application environment is independent of the machine hosting the model. Gradio is included for the UI; model weights and PyTorch are not installed by this project. Tests and fixture-based UI development do not require a GPU or model server.
+
+For model access, copy `.env.example` to your ignored `.env` and configure your local or remote compatible server. See [portable setup](docs/SETUP.md). Actual inference requires a reachable model service with suitable computing resources; no particular cluster or GPU model is required by the client.
 
 ## File ownership
 
 ```text
 bern-archives-apertus/
   core/                  Jean: configuration, model client, future data/search/service
-  scripts/               Jean: private H100 service/start/stop helpers
+  scripts/               Jean: optional model-service utilities
   contracts.py           Jean integrates agreed UI/backend type changes
   ui/                    Dyane98: interface-only helpers
   app.py                 Dyane98 creates the UI entry point during S1
@@ -59,10 +61,6 @@ git switch -c sister/ui
 Each person runs only their own branch command. Do not rerun `switch -c` if the branch already exists; switch to it instead. Jean works in backend/configuration files, Dyane in UI/user-guide files. Commit only your assigned paths, not `git add .` over someone else's work. If the UI needs a contract/dependency change, agree it and let Jean make that change. Integrate early through a reviewed change; never resolve a conflict by discarding the other person's files.
 
 `.github/CODEOWNERS` requests the appropriate reviewer when GitHub supports it. It is **not a file lock** and branch protection is not enabled by this scaffold.
-
-## H100 connection
-
-See [setup commands](docs/SETUP.md). The Bern service binds only to `127.0.0.1:8010`; Track 2A's port 8000 is not used. The pinned existing model cache is mounted read-only, no weights are redownloaded, and no unrelated job/container is stopped. An optional private SSH tunnel lets another machine reach it; do not create a public share link.
 
 ## Data and model rights
 

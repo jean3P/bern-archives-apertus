@@ -10,10 +10,28 @@ def test_private_default():
     assert Settings().base_url == "http://127.0.0.1:8010/v1"
 
 
-@pytest.mark.parametrize("url", ["https://provider.invalid/v1", "http://127.0.0.1:8000/v1", "http://127.0.0.1:8010/not-v1"])
-def test_rejects_external_or_track2_endpoint(url):
+@pytest.mark.parametrize("url", ["https://provider.invalid/v1", "http://127.0.0.1:8000/v1", "http://model-server.local:9000/v1"])
+def test_accepts_local_and_remote_model_servers(url):
+    assert Settings(base_url=url).base_url == url
+
+
+@pytest.mark.parametrize("url", ["file:///v1", "http:///v1", "http://localhost:8010/not-v1", "https://user:secret@provider.invalid/v1", "https://provider.invalid/v1?key=secret", "http://localhost:0/v1"])
+def test_rejects_invalid_or_credential_bearing_urls(url):
     with pytest.raises(ValueError):
         Settings(base_url=url)
+
+
+def test_optional_api_key_is_sent_but_not_exposed_in_settings_repr():
+    config = Settings(base_url="https://provider.invalid/v1", api_key="test-only-key")
+    def handle(request):
+        assert request.headers["Authorization"] == "Bearer test-only-key"
+        return httpx.Response(200, json={"data": [{"id": config.model}]})
+    client = ApertusClient(config, transport=httpx.MockTransport(handle))
+    try:
+        assert client.models()["data"][0]["id"] == config.model
+        assert "test-only-key" not in repr(config)
+    finally:
+        client.close()
 
 
 def test_connection_smoke_with_explicit_wire_fixture():
