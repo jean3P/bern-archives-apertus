@@ -156,9 +156,10 @@ def literal(token):
 
 def parse_dump(text, *, projection=PUBLIC_FIELDS):
     columns, tables, counts = {}, {name: [] for name in projection}, Counter()
-    for statement in statements(text):
+    for number, statement in enumerate(statements(text), start=1):
         create = re.match(r"CREATE TABLE\s+`([^`]+)`\s*\(", statement, re.I)
         insert = re.match(r"INSERT INTO\s+`([^`]+)`\s*(\([^)]*\))?\s*VALUES\s*", statement, re.I)
+        lock = re.fullmatch(r"LOCK TABLES\s+`([^`]+)`\s+WRITE", statement, re.I)
         if create:
             name = create[1]
             if name in columns:
@@ -190,12 +191,20 @@ def parse_dump(text, *, projection=PUBLIC_FIELDS):
                         row[column] = value
                 if name in tables:
                     tables[name].append(row)
-        elif re.match(r"(?:SET|START TRANSACTION|COMMIT|ALTER TABLE|DROP TABLE|LOCK TABLE|UNLOCK TABLE|USE|CREATE DATABASE)\b", statement, re.I):
+        elif lock:
+            if lock[1] not in columns:
+                raise ValueError("Dump lock references an undefined table: " + lock[1])
+            # mysqldump controls serialization when restoring. We never restore/execute it.
+        elif re.fullmatch(r"UNLOCK TABLES", statement, re.I):
+            pass
+        elif re.match(r"(?:SET|START TRANSACTION|COMMIT|ALTER TABLE|DROP TABLE|USE|CREATE DATABASE)\b", statement, re.I):
             if "NO_BACKSLASH_ESCAPES" in statement.upper():
                 raise ValueError("Unsupported MySQL string mode")
             # Read-only structural/header statements are recognized, never executed.
         else:
-            raise ValueError("Unsupported SQL statement; refusing a partial import")
+            keyword = re.match(r"[A-Za-z_]+", statement)
+            kind = keyword[0].upper() if keyword else "non-keyword"
+            raise ValueError(f"Unsupported SQL statement {number} ({kind}); refusing a partial import")
     if not set(projection).issubset(columns):
         raise ValueError("Required source tables are absent")
     return tables, columns, {name: counts.get(name, 0) for name in columns}

@@ -62,6 +62,31 @@ def test_invalid_utf8_in_public_text_fails_instead_of_replacing():
         parse_dump(sql, projection={"x": ("id", "text")})
 
 
+def test_mysqldump_plural_lock_controls_are_recognized_without_execution():
+    sql = """CREATE TABLE `x` (
+      `id` int,
+      `text` text
+    );
+    LOCK TABLES `x` WRITE;
+    INSERT INTO `x` VALUES (1,'original; $ $$');
+    UNLOCK TABLES;
+    """
+    tables, _, counts = parse_dump(sql, projection={"x": ("id", "text")})
+    assert tables == {"x": [{"id": 1, "text": "original; $ $$"}]}
+    assert counts == {"x": 1}
+
+
+def test_lock_of_undefined_table_is_not_silently_skipped():
+    with pytest.raises(ValueError, match="undefined table"):
+        parse_dump("LOCK TABLES `missing` WRITE;", projection={})
+
+
+def test_unknown_data_mutation_still_fails_without_logging_its_values():
+    with pytest.raises(ValueError, match=r"statement 1 \(UPDATE\)") as error:
+        parse_dump("UPDATE `x` SET text='PRIVATE_SENTINEL';", projection={})
+    assert "PRIVATE_SENTINEL" not in str(error.value)
+
+
 def test_source_hash_mismatch_fails_before_zip_or_sql_processing(tmp_path):
     source = tmp_path / "not-the-source.zip"
     source.write_bytes(b"not a zip")

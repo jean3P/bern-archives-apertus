@@ -4,7 +4,7 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2 import/export/SQLite-search code is now prepared on `jean/backend`, but has not been executed or tested.** Run the [J2 commands](docs/J2.md) to establish actual import/search results. Model-grounded archival answers and the UI remain J3/S1 work. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
+J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2 import/export/SQLite-search code is prepared on `jean/backend`; successful import/search validation is still pending.** The first user pilot exposed a dump-control syntax issue; its reader fix awaits a rerun. See the [J2 commands](docs/J2.md). Model-grounded archival answers and the UI remain J3/S1 work. No archival accuracy, 80% processing result or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
