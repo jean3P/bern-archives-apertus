@@ -6,7 +6,8 @@ import json
 import gradio as gr
 
 from ui.review_records import (DECISIONS, NOT_COUNTED, ReviewError, RunLoadError, export_session,
-                               load_case_file, load_references, load_run, make_review)
+                               import_session, list_exports, load_case_file, load_references, load_run,
+                               make_review)
 
 
 BANNER = "## SAVED RUN REVIEW — recorded development results, not a fresh LIVE answer"
@@ -337,6 +338,25 @@ def on_export(run, reviews):
             f"{suggestions} human suggestion(s). The saved run was not changed.</p>")
 
 
+def on_list_exports(run):
+    """Fill the resume list with this run's earlier exports, newest first."""
+    names = list_exports(run)
+    return gr.Dropdown(choices=names, value=names[0] if names else None)
+
+
+def on_resume(run, choice, session_name):
+    """Replace the reviews in memory with a checked earlier export."""
+    if run is None:
+        return gr.skip(), gr.skip(), gr.skip(), '<p class="load-error">Load a run first.</p>'
+    try:
+        reviews = import_session(run, session_name)
+    except ReviewError as exc:
+        return gr.skip(), gr.skip(), gr.skip(), f'<p class="load-error">Not resumed: {esc(exc)}</p>'
+    message = (f'<p class="review-ok">Resumed {len(reviews)} review(s) from {esc(session_name)}. '
+               "The reviews in memory were replaced; the export folder was not changed.</p>")
+    return reviews, case_table(run, reviews, choice), review_progress(run, reviews, choice), message
+
+
 def build_app(default_run: str = "") -> gr.Blocks:
     with gr.Blocks(title="Saved run review", analytics_enabled=False) as review:
         gr.Markdown("# Stapfer saved run review")
@@ -382,6 +402,10 @@ def build_app(default_run: str = "") -> gr.Blocks:
 
         gr.Markdown("### Export")
         export_button = gr.Button("Export reviews and suggestions to a new folder")
+        with gr.Row():
+            export_choice = gr.Dropdown(choices=[], value=None, scale=3,
+                                        label="Earlier exports of this run (newest first)")
+            resume_button = gr.Button("Resume from this export", scale=1)
         export_message = gr.HTML()
 
         panels = [question_panel, evidence_panel, reference_panel]
@@ -391,7 +415,8 @@ def build_app(default_run: str = "") -> gr.Blocks:
             on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
             on_select, [run_state, case_id], panels).then(
             on_show_form, [run_state, reviews, case_id], form).then(
-            on_show_technical, [run_state, case_id, artifact_choice], technical)
+            on_show_technical, [run_state, case_id, artifact_choice], technical).then(
+            on_list_exports, [run_state], export_choice)
         case_id.change(on_select, [run_state, case_id], panels)
         case_id.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
         artifact_choice.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
@@ -400,7 +425,11 @@ def build_app(default_run: str = "") -> gr.Blocks:
                           [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
                            notes, suggestion],
                           [reviews, cases, filter_info, review_message])
-        export_button.click(on_export, [run_state, reviews], export_message)
+        export_button.click(on_export, [run_state, reviews], export_message).then(
+            on_list_exports, [run_state], export_choice)
+        resume_button.click(on_resume, [run_state, filter_choice, export_choice],
+                            [reviews, cases, filter_info, export_message]).then(
+            on_show_form, [run_state, reviews, case_id], form)
         filter_choice.change(on_filter, [run_state, reviews, filter_choice], [cases, filter_info])
         cases.select(on_table_select, None, case_id)
         previous_button.click(on_previous, [run_state, reviews, filter_choice, case_id], case_id)

@@ -138,3 +138,51 @@ def export_session(run: dict, reviews: dict, export_root=EXPORT_ROOT) -> Path:
     seal_sha256 = digest(run["directory"] / "_COMPLETE.json")
     write_json(session / CORRECTIONS_FILE, suggested_corrections(run, reviews, seal_sha256))
     return session
+
+
+def list_exports(run, export_root=EXPORT_ROOT) -> list:
+    """Earlier export folders of this run, newest first."""
+    root = Path(export_root)
+    if run is None or not root.is_dir():
+        return []
+    prefix = run["directory"].name + "-"
+    return sorted((path.name for path in root.iterdir()
+                   if path.is_dir() and not path.is_symlink() and path.name.startswith(prefix)), reverse=True)
+
+
+def import_session(run: dict, session_name, export_root=EXPORT_ROOT) -> dict:
+    """Read an earlier export back into memory; reject other runs, changed answers and repeats."""
+    if not isinstance(session_name, str) or not SAFE_CASE_ID.fullmatch(session_name):
+        raise ReviewError("Choose an export folder from the list.")
+    session = Path(export_root).resolve() / session_name
+    if session.is_symlink() or not session.is_dir():
+        raise ReviewError("That export folder does not exist.")
+    try:
+        verify_directory(run["directory"])
+        scored = load_reviews(child_file(session, REVIEW_FILE), run["cases"])
+        corrections = read_json(child_file(session, CORRECTIONS_FILE))
+    except (OSError, ValueError) as exc:
+        raise ReviewError(f"Cannot resume this export: {exc}") from exc
+    if corrections.get("run_seal_sha256") != digest(run["directory"] / "_COMPLETE.json"):
+        raise ReviewError("This export belongs to a different or changed run.")
+
+    by_id = {case["case_id"]: case for case in run["cases"]}
+    suggestions = {}
+    for item in corrections.get("corrections", []):
+        case = by_id.get(item.get("case_id"))
+        if (case is None or item["case_id"] in suggestions
+                or item.get("review_binding") != case["review_binding"]):
+            raise ReviewError("A suggestion belongs to another case or response, or is repeated.")
+        suggestions[item["case_id"]] = item.get("suggested_answer") or ""
+
+    labels = {value: label for label, value in DECISIONS.items()}
+    reviews = {}
+    for case_id, record in scored.items():
+        suggestion = suggestions.get(case_id, "")
+        if record["decision"] is None and not record["notes"] and not suggestion:
+            continue
+        supported = record["supported_claims"]
+        reviews[case_id] = make_review(by_id[case_id], record["reviewer"], labels[record["decision"]],
+                                       NOT_COUNTED if supported is None else str(supported),
+                                       record["notes"], suggestion)
+    return reviews
