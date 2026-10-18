@@ -11,7 +11,7 @@ from core import entity_retrieval as er
 from core import answer_qualifications as aq
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "requested-details-v8-focused-context-and-date-gate"
+VERSION = "requested-details-v9-field-bound-focus"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 768
 PLAN_INSTRUCTIONS = """Select catalogue fields for each supplied literal question unit.
@@ -141,17 +141,20 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
         log.write("coverage_selection.json", {"scope": "frozen_entity_interface"})
         return cards, reason, plan
     requirements = literal_requirements(question)
-    if explicit:
+    route_explicit = bool(len(explicit) > 1 and len(requirements) == 2)
+    if explicit and not route_explicit:
         for item in requirements:
             item["question_codes"] = explicit
     else:
         view = [{"code": row["question_number"], "question": (row["text_original"] or "")[:200],
-                 "french": (row["text_french"] or "")[:140]} for row in catalogue]
+                 "french": (row["text_french"] or "")[:140]} for row in catalogue
+                if not explicit or row["question_number"] in explicit]
         payload = {"question": question, "transcription_id": transcription_id,
                    "requirements": requirements, "catalogue": view}
         messages = [{"role": "system", "content": PLAN_INSTRUCTIONS},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-        raw = strict_json(call_model(get_client(), messages, plan_schema(catalogue, requirements),
+        selected_catalogue = [row for row in catalogue if not explicit or row["question_number"] in explicit]
+        raw = strict_json(call_model(get_client(), messages, plan_schema(selected_catalogue, requirements),
                                     "coverage_plan", PLAN_TOKENS, log))
         keys = [f"r{i + 1}" for i in range(len(requirements))]
         if not isinstance(raw, dict) or set(raw) != set(keys):
@@ -179,6 +182,14 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
         "teacher_family_request": family_request and teacher_request,
         "added_catalogue_codes": additions, "effective_codes": codes,
         "explicit_scope_never_expanded": bool(explicit)})
+    effective_requirements = deepcopy(requirements)
+    families = teacher_family_fields(catalogue)
+    for item in effective_requirements:
+        if (teacher_request and len(families) == 1 and (not explicit or families[0] in explicit)
+                and re.search(r"\b(?:children|child|sons?|daughters?|family|famille|fils|enfants?|kinder|familie)\b",
+                              " ".join(er.tokens(item["label"])))):
+            item["question_codes"] = families
+    log.write("coverage_effective_requirements.json", effective_requirements)
     cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log,
                              prepared_plan={"question_codes": codes}) if codes else ([], None)
     receipt = {"scope": "supplied_transcription", "selected_transcription_id": transcription_id}
@@ -286,16 +297,24 @@ def answer_parts(question, transcription_id, plan, packet, included, get_client,
     # repair allowances; the one retry is shared by the entire instruction.
     if log.calls + len(plan["requirements"]) > log.max_posts:
         raise ValueError("Question needs more focused answers than the shared POST budget permits")
-    for requirement in plan["requirements"]:
+    effective_path = log.path / "coverage_effective_requirements.json"
+    effective = json.loads(effective_path.read_text(encoding="utf-8")) if effective_path.exists() else plan["requirements"]
+    for requirement in effective:
         subplan = {"entities": [], "requirements": [requirement]}
-        payload = focused_payload(question, transcription_id, requirement, packet, spans)
+        selected_packet = [group for group in packet if not requirement["question_codes"] or any(
+            row["question_number"] in requirement["question_codes"] for row in group["records"])]
+        selected_ids = {row["record_id"] for group in selected_packet for row in group["records"]}
+        selected_spans = [span for span in spans if span["record_id"] in selected_ids]
+        if not selected_packet:
+            raise ValueError("No delivered evidence for a required catalogue field")
+        payload = focused_payload(question, transcription_id, requirement, selected_packet, selected_spans)
         while True:
             messages = [{"role": "system", "content": ANSWER_INSTRUCTIONS},
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-            content = call_model(get_client(), messages, answer_schema(subplan, spans), "cited_answer", ANSWER_TOKENS, log)
+            content = call_model(get_client(), messages, answer_schema(subplan, selected_spans), "cited_answer", ANSWER_TOKENS, log)
             try:
                 raw = strict_json(content)
-                normalized = normalize(raw, subplan, spans, included)
+                normalized = normalize(raw, subplan, selected_spans, included)
                 break
             except ValueError as error:
                 log.record({"event": "answer_validation_failed", "part": len(parts) + 1,
@@ -384,17 +403,24 @@ def receipts_valid(saved, events, included):
     if len(parts) != len(plan["requirements"]) or not answers:
         return False
     calls = [e for e in events if e.get("event") == "generation_request"]
-    for part, requirement in zip(parts, plan["requirements"], strict=True):
+    effective = saved("coverage_effective_requirements.json", plan["requirements"])
+    if len(effective) != len(plan["requirements"]):
+        return False
+    for part, requirement in zip(parts, effective, strict=True):
         subplan = {"entities": [], "requirements": [requirement]}
+        selected_packet = [group for group in packet if not requirement["question_codes"] or any(
+            row["question_number"] in requirement["question_codes"] for row in group["records"])]
+        selected_ids = {row["record_id"] for group in selected_packet for row in group["records"]}
+        selected_spans = [span for span in spans if span["record_id"] in selected_ids]
         body = calls[part["generation_post"] - 1]["request"]
         payload = json.loads(body["messages"][1]["content"])
         payload.pop("format_feedback", None)
         matching = [raw for request_body, raw in answers if request_body == body]
         if (part["requirement"] != requirement or payload != focused_payload(request["question"],
-                request.get("transcription_id"), requirement, packet, spans)
+                request.get("transcription_id"), requirement, selected_packet, selected_spans)
                 or body["messages"][0]["content"] != ANSWER_INSTRUCTIONS
-                or body["response_format"]["json_schema"]["schema"] != answer_schema(subplan, spans)
+                or body["response_format"]["json_schema"]["schema"] != answer_schema(subplan, selected_spans)
                 or not matching or matching[-1] != part["raw"]
-                or normalize(part["raw"], subplan, spans, included) != part["normalized"]):
+                or normalize(part["raw"], subplan, selected_spans, included) != part["normalized"]):
             return False
     return combine_parts(parts, included) == saved("validated_claims.json", None)

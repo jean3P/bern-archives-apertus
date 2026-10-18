@@ -523,7 +523,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     timings["total_seconds"] = time.perf_counter() - tick
     log.write("response.json", result)
     log.write("summary.json", {"status": result["status"], "transport": authority,
-        "generation_posts_attempted": log.calls, "format_retries": log.repairs if structured else repairs,
+        "generation_posts_attempted": log.calls, "format_retries": log.repairs if structured or coverage else repairs,
         "pipeline": pipeline,
         "packet_sha256": packet_hash, "timing_seconds": timings,
         "semantic_support_independently_verified": False, "source_dataset_modified": False})

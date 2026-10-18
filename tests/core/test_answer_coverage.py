@@ -162,3 +162,25 @@ def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     inspected = inspect_case(case, out, {"attempted": True, "response": response},
         {"alternatives": []}, "software_fixture", pipeline="apertus-qualified")
     assert inspected["protocol_valid"] and inspected["mechanical_citation_valid"]
+
+
+def test_explicit_two_field_requests_are_routed_then_receive_only_their_field(tmp_path):
+    data = make_data(tmp_path)
+    replies = iter([{"r1": ["I.1"], "r2": ["I.1.d"]},
+        {"status": "answered", "message": "", "claims": [{"text": "Testville.", "citations": [{"span_id": "s1"}]}]},
+        {"status": "answered", "message": "", "claims": [{"text": "Foxtrot.", "citations": [{"span_id": "s2"}]}]}])
+    requests = []
+    def wire(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": Settings().model}]})
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={"model": Settings().model, "choices": [{
+            "finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
+    question = "According to I.1 and I.1.d, what place and district are named?"
+    response, out = run_answer(question, 101, data_dir=data, out=tmp_path / "run", config=Settings(),
+        pipeline="apertus-qualified", retrieval_mode="coverage", transport=httpx.MockTransport(wire))
+    assert response["status"] == "answered" and len(requests) == 3
+    for body, code in zip(requests[1:], ["I.1", "I.1.d"], strict=True):
+        payload = json.loads(body["messages"][1]["content"])
+        assert {row["question_number"] for group in payload["evidence"] for row in group["records"]} == {code}
