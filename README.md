@@ -4,7 +4,7 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3 cited answering is implemented but not run or validated yet**; see the [answer commands and limits](docs/J3.md). The UI remains separate S1/S2 work. No historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
+J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3 has one correct explicit-code development answer and 82 passing software tests.** The first natural-language request failed at retrieval-plan validation; its scoped code-only correction is prepared, not rerun. See the [answer commands and limits](docs/J3.md). The UI remains separate S1/S2 work. No general historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ bern-archives-apertus/
 
 `app.py` is an assigned future file, not a working application already present in this scaffold. The agreed callable boundary is `core.service.search_records` and `core.service.answer_question`, returning the shapes in `contracts.py`. UI examples are always marked `mode: demo`; live mode requires real backend data and model replies.
 
-Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. Its actual execution and semantic quality are still unvalidated. See [dataset commands](docs/J2.md) and [answer commands](docs/J3.md).
+Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. One explicit-code case has succeeded; the corrected natural-language path and broader semantic quality remain unvalidated. See [dataset commands](docs/J2.md) and [answer commands](docs/J3.md).
 
 ```bash
 uv run --locked python -m core.answer_cli \

@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from contracts import validate_response
-from core.answering import run_answer, strict_json, validate_plan
+from core.answering import retrieval_schema, run_answer, strict_json, validate_plan
 from core.config import Settings
 from core.evidence import explicit_codes, make_packet, validate_answer
 from core.policy import SCHEMA_VERSION, SQL_SHA256
@@ -124,11 +124,27 @@ def test_explicit_codes_come_from_actual_catalogue_not_expected_answers():
     {"question_codes": ["I.99"], "queries": []},
     {"question_codes": [], "queries": []},
     {"question_codes": [], "queries": ["stapfer:answer:901"]},
+    {"question_codes": ["I.1"], "queries": ["one two three four five six seven eight nine"]},
     {"question_codes": [], "queries": ["x"] * 4},
     {"question_codes": [], "queries": [], "sql": "SELECT *"}])
 def test_retrieval_plan_rejects_unknown_codes_ids_and_extra_fields(plan):
     with pytest.raises(ValueError):
         validate_plan(plan, CATALOGUE)
+
+
+def test_scoped_retrieval_schema_requests_only_codes_and_rejects_unused_queries():
+    schema = retrieval_schema(CATALOGUE, scoped=True)
+    assert schema["required"] == ["question_codes"]
+    assert set(schema["properties"]) == {"question_codes"}
+    assert validate_plan({"question_codes": ["I.1"]}, CATALOGUE, scoped=True) == {"question_codes": ["I.1"]}
+    with pytest.raises(ValueError, match="fields"):
+        validate_plan({"question_codes": ["I.1"], "queries": ["unused full sentence"]}, CATALOGUE, scoped=True)
+
+
+@pytest.mark.parametrize("codes", [["I.99"], ["I.1"] * 4, "I.1", [901]])
+def test_scoped_plan_still_requires_bounded_known_codes(codes):
+    with pytest.raises(ValueError):
+        validate_plan({"question_codes": codes}, CATALOGUE, scoped=True)
 
 
 def test_explicit_code_answer_preserves_originals_and_ui_contract(dataset, tmp_path):
@@ -149,9 +165,27 @@ def test_natural_question_uses_one_reformulation_and_one_answer(dataset, tmp_pat
     requests = []
     result, path = run_answer("Wo befindet sich die Schule?", 101, data_dir=dataset,
         out=tmp_path / "natural", transport=transport_for([
-            {"question_codes": ["I.1"], "queries": ["Ort Schule"]}, answer()], requests))
+            {"question_codes": ["I.1"]}, answer()], requests))
     assert result["status"] == "answered" and len(requests) == 2
     assert json.loads((path / "retrieval_plan.json").read_text())["question_codes"] == ["I.1"]
+    assert "queries" not in requests[0]["response_format"]["json_schema"]["schema"]["properties"]
+
+
+def test_scoped_no_applicable_code_declines_without_answer_generation(dataset, tmp_path):
+    requests = []
+    result, path = run_answer("An unrelated question outside this survey?", 101, data_dir=dataset,
+        out=tmp_path / "no-code", transport=transport_for([{"question_codes": []}], requests))
+    assert result["status"] == "insufficient_evidence" and result["answer"] is None
+    assert len(requests) == 1 and not (path / "validated_claims.json").exists()
+
+
+def test_global_retrieval_retains_bounded_keyword_route(dataset, tmp_path):
+    requests = []
+    result, _ = run_answer("Which place is mentioned near Testville?", data_dir=dataset,
+        out=tmp_path / "global", transport=transport_for([
+            {"question_codes": ["I.1"], "queries": ["Testville"]}, answer()], requests))
+    assert result["status"] == "answered" and len(requests) == 2
+    assert "queries" in requests[0]["response_format"]["json_schema"]["schema"]["properties"]
 
 
 def test_one_shared_validation_retry_is_bounded_and_failed_raw_reply_survives(dataset, tmp_path):
