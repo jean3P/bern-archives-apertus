@@ -1,5 +1,10 @@
 # Apertus only per part answering
 
+**Rejected development candidate.** The completed20-question comparison produced7 answers and
+13 processing errors,52 requests and103.794 seconds, versus20 technical completions,23 requests
+and40.737 seconds for the coverage-only baseline. Keep `--pipeline apertus` as the default. Do not
+merge this experiment or treat its passing software checks as evidence of better answers.
+
 Select `--pipeline apertus-facets` to test explicit question parts without Qwen. The existing
 `apertus` default remains the earlier baseline, and the hybrid stays inactive unless explicitly
 selected. No model/service restart, dependency change, data rebuild or UI change is required.
@@ -27,7 +32,8 @@ The evaluator checks the Apertus model endpoint before beginning questions, so a
 service creates a preparation failure rather than20 repeated connection failures. Offline scoring
 replays the part bindings and preserves the usual response-bound review format.
 
-For the bounded development comparison, use a new output directory:
+The completed development comparison used the following command. Its output already exists;
+do not rerun into that directory. Reproduction requires a deliberately chosen new output path.
 
 ```bash
 uv run --locked python -m core.evaluate_cli run \
