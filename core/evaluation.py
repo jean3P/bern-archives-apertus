@@ -84,10 +84,13 @@ def save_scores(output, records, document_template, *, reviews=None, document_re
 
 
 def run_evaluation(references, split, data_dir, out, *, allow_draft=False, reviewed_by=None,
-                   _answerer=None, _dataset_verifier=None, pipeline="apertus"):
+                   _answerer=None, _dataset_verifier=None, pipeline="apertus", retrieval_mode="standard"):
     """Test-only adapters are explicitly labelled software_fixture, never actual inference."""
     if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
+    if retrieval_mode not in ("standard", "entity") or (retrieval_mode == "entity" and
+            pipeline not in ("apertus-qualified", "qwen-only")):
+        raise ValueError("Entity retrieval requires a concise Apertus or Qwen-only pipeline")
     max_posts = 4 if pipeline == "qwen-apertus" else 3
     bundle = load_bundle(references, split)
     if allow_draft and reviewed_by is not None:
@@ -132,6 +135,7 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
             "dataset_completion_sha256": digest(data_dir / "_SUCCESS.json"),
             "scheduled_case_ids": [case["case_id"] for case in bundle["cases"]],
             "pipeline": pipeline,
+            **({"retrieval_mode": retrieval_mode} if retrieval_mode != "standard" else {}),
             "max_generation_posts": max_posts * len(bundle["cases"]), "max_posts_per_case": max_posts,
             "max_validation_retries_per_case": 1, "runtime_fields": ["question", "transcription_id"],
             "dataset_verification_seconds": verification_seconds,
@@ -166,6 +170,8 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
                 try:
                     request = dict(case["input"])
                     options = {}
+                    if retrieval_mode != "standard":
+                        options["retrieval_mode"] = retrieval_mode
                     if pipeline in ("apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
                         options["pipeline"] = pipeline
                         if config and pipeline == "qwen-apertus":

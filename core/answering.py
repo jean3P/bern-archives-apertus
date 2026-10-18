@@ -221,11 +221,15 @@ def retrieve(question, transcription_id, catalogue, directory, get_client, log, 
 
 def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                config=None, transport=None, rewrite=True, pipeline="apertus",
-               qwen_config=None, qwen_transport=None):
+               qwen_config=None, qwen_transport=None, retrieval_mode="standard"):
     """Explicitly run one request. All real/model-fixture results get separate logs."""
     if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
     qualified = pipeline in ("apertus-qualified", "qwen-only")
+    if retrieval_mode not in ("standard", "entity"):
+        raise ValueError("Choose standard or entity retrieval")
+    if retrieval_mode == "entity" and (not qualified or not rewrite):
+        raise ValueError("Entity retrieval requires a concise cited-answer pipeline and routing")
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"
     structured = hybrid or per_part
@@ -250,7 +254,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     authority = "mock_transport" if transport is not None else "actual_http"
     log.write("input.json", {"question": question, "transcription_id": transcription_id,
                             "query_reformulation_allowed": rewrite, "transport": authority,
-                            "pipeline": pipeline})
+                            "pipeline": pipeline,
+                            **({"retrieval_mode": retrieval_mode} if retrieval_mode != "standard" else {})})
     modules = [Path(__file__), Path(__file__).with_name("evidence.py"),
                Path(__file__).with_name("apertus.py"), Path(__file__).with_name("search.py"),
                ROOT / "contracts.py"]
@@ -258,6 +263,9 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         from core import answer_qualifications as aq
         modules.append(Path(aq.__file__))
         answer_model = aq.QWEN_MODEL if pipeline == "qwen-only" else aq.MODEL
+    if retrieval_mode == "entity":
+        from core import entity_retrieval as er
+        modules.append(Path(er.__file__))
     answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
@@ -276,6 +284,9 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
         "mechanical_citation_checks_only": True,
+        **({"retrieval_mode": "entity", "retrieval_version": er.VERSION,
+            "entity_instructions_sha256": hashlib.sha256(er.INSTRUCTIONS.encode()).hexdigest()}
+           if retrieval_mode == "entity" else {}),
         **({"pipeline": pipeline, "qualification_field": aq.OUTPUT_MODE,
             "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "answer_token_limit": 512, "model": answer_model} if qualified else {}),
@@ -387,7 +398,10 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                     prepared_plan = None
             timings["interpretation_seconds"] = time.perf_counter() - started
         started = time.perf_counter()
-        if structured and prepared_plan is None:
+        if retrieval_mode == "entity":
+            cards, reason = er.retrieve(question, transcription_id, catalogue, directory,
+                                        store, get_client, log)
+        elif structured and prepared_plan is None:
             cards, reason = [], "No applicable catalogue route or keyword hypothesis was identified; archive absence is not established."
         else:
             cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log, rewrite,

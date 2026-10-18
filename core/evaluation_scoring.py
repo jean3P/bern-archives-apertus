@@ -188,6 +188,10 @@ def qualifications_receipts_valid(saved, events, delivered, *, pipeline="apertus
         return False
     if saved("summary.json", {}).get("status") == "error":
         return True
+    if saved("input.json", {}).get("retrieval_mode") == "entity":
+        from core.entity_retrieval import receipts_valid
+        if not receipts_valid(saved, events):
+            return False
     if not delivered:
         return not answers
     raw = strict_loads(answers[-1])
