@@ -31,6 +31,7 @@ If loading fails, the page clears and explains why. **Run changed or incomplete*
 ## Read a case
 
 - **Cases table:** every case with its question, backend status, your review decision and duration. Click a row, use the **Case** list or **◀ Previous / Next ▶**.
+- **Technical error** means an actual error response, unattempted question or invalid receipt/response contract. An otherwise valid nonanswer on an answerable question is a false abstention, not a technical outage; judge it separately without hiding the case.
 - **Show:** filter by All, Pending, Correct, Incorrect, Uncertain or Technical error. The line above the table shows how many cases are shown and the review progress. These counts are **not a final accuracy**: pending cases are not reviewed yet.
 - **Question and model answer:** the answer exactly as generated, with the backend status and message.
 - **Draft reference:** the required facts and known source quotations. It is a draft for checking, not approved truth.

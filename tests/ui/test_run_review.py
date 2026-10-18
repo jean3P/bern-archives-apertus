@@ -11,7 +11,7 @@ from core.evaluation_scoring import load_reviews
 from ui.review_records import (CORRECTIONS_FILE, REVIEW_FILE, ReviewError, RunLoadError, export_session,
                                discover_runs, import_session, list_exports, load_case_file, load_references, load_run,
                                make_review)
-from ui.run_review import (evidence_html, on_form_edit, on_load, on_table_select, question_answer_html,
+from ui.run_review import (evidence_html, is_technical_error, on_form_edit, on_load, on_table_select, question_answer_html,
                            step_case, visible_case_ids)
 
 # Synthetic fixture records: invented for these tests, not archival data or model output.
@@ -139,6 +139,15 @@ def test_bound_artifacts_are_available_without_opening_arbitrary_files(run_dir):
     assert load_case_file(run_dir, "SYN-01", "binding_hold.json") is None
     with pytest.raises(RunLoadError):
         load_case_file(run_dir, "SYN-01", ".env")
+
+
+def test_a_false_abstention_is_not_labelled_as_a_technical_error():
+    case = {"observed_status": "insufficient_evidence", "attempted": True,
+            "definitive_failure": True, "protocol_valid": True,
+            "response_contract_valid": True}
+    assert not is_technical_error(case)
+    assert is_technical_error({**case, "protocol_valid": False})
+    assert is_technical_error({**case, "observed_status": "error"})
 
 
 def test_rejects_missing_seal_changed_run_and_non_development_split(tmp_path, run_dir):

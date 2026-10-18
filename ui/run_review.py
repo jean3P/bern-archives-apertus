@@ -111,9 +111,10 @@ FILTERS = ["All", "Pending", "Correct", "Incorrect", "Uncertain", "Technical err
 
 
 def is_technical_error(case) -> bool:
-    """Error responses, unattempted cases and definitive failures."""
-    return (case.get("observed_status") == "error" or not case.get("attempted", True)
-            or bool(case.get("definitive_failure")))
+    """Transport/receipt failures, not every mismatch against a draft reference."""
+    return (case.get("observed_status") in ("error", "receipt_error")
+            or not case.get("attempted", True) or case.get("protocol_valid") is False
+            or case.get("response_contract_valid") is False)
 
 
 def matches_filter(case, reviews, choice) -> bool:
