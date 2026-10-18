@@ -1,16 +1,20 @@
 """Stapfer evidence explorer: Jeni's interface (S1-S2)."""
 
 import html
+import math
 import gradio as gr
 
+from contracts import validate_response
+from core import service
 from ui.demo import load_demo_response
 
 DEMO_BANNER = "## DEMO — display example, not a model result"
+LIVE_BANNER = "## LIVE — Apertus answers from retrieved archival evidence"
 
 STATUS_LABELS = {
     "answered": "Answered",
     "insufficient_evidence": "Not enough evidence to answer",
-    "error": "Error — the service did not respond",
+    "error": "Error — no answer was produced",
 }
 
 THEME = gr.themes.Default().set(
@@ -84,29 +88,67 @@ def status_box(status: str, text: str):
     """Status text plus a CSS class that colours it by status."""
     return gr.Textbox(value=text, elem_classes=["status-box", f"status-{status}"])
 
-def on_ask(question, transcription_id, scenario="answered"):
+def parse_transcription_id(value):
+    """Gradio may supply integral floats; never truncate a fractional scope."""
+    if value is None or isinstance(value, str) and not value.strip():
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if (type(value) not in (int, float) or not math.isfinite(value)
+            or value != int(value) or not 1 <= value <= 2**63 - 1):
+        raise ValueError("Transcription ID must be a positive whole number, or blank.")
+    return int(value)
+
+
+def clear_response(mode="live"):
+    return (DEMO_BANNER if mode == "demo" else LIVE_BANNER,
+            status_box("working", "Working…"), "", "")
+
+
+def on_mode_change(mode):
+    banner, _, answer, source = clear_response(mode)
+    return (gr.Dropdown(interactive=mode == "demo"), banner,
+            status_box("ready", "Ready"), answer, source)
+
+
+def on_ask(question, transcription_id, scenario="answered", mode="demo"):
+    """DEMO never calls the model; LIVE never substitutes a fixture on failure."""
     try:
-        response = load_demo_response(scenario)
+        if mode == "demo":
+            response = load_demo_response(scenario)
+        elif mode == "live":
+            if not isinstance(question, str) or not question.strip() or len(question) > 2000:
+                raise ValueError("Enter a question of 1–2000 characters.")
+            response = service.answer_question(question, parse_transcription_id(transcription_id))
+        else:
+            raise ValueError("Choose LIVE or DEMO mode.")
+        validate_response(response)
+        if response["mode"] != mode:
+            raise ValueError("Response mode does not match the selected mode.")
+        banner = DEMO_BANNER if mode == "demo" else LIVE_BANNER
+        status_text = format_status(response)
+        answer_text = response["answer"] or ""
+        source_text = "<hr>".join(format_source(c) for c in response["sources"])
+        return banner, status_box(response["status"], status_text), answer_text, source_text
     except Exception as exc:
-        status_text = f"{STATUS_LABELS['error']}\nThe request failed: {exc}"
-        return "", status_box("error", status_text), "", ""
-    banner = DEMO_BANNER if response["mode"] == "demo" else ""
-    status_text = format_status(response)
-    answer_text = response["answer"] or ""
-    source_text = "<hr>".join(format_source(c) for c in response["sources"])
-    return banner, status_box(response["status"], status_text), answer_text, source_text
+        detail = str(exc) if mode == "demo" else f"{type(exc).__name__}; check the input and service configuration."
+        status_text = f"{STATUS_LABELS['error']}\nThe request failed: {detail}"
+        banner = DEMO_BANNER if mode == "demo" else LIVE_BANNER
+        return banner, status_box("error", status_text), "", ""
 
 
-with gr.Blocks(title="Stapfer evidence explorer") as demo:
+with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as demo:
     gr.Markdown("# Stapfer evidence explorer")
-    banner = gr.Markdown()
+    banner = gr.Markdown(LIVE_BANNER)
 
+    mode = gr.Radio(choices=["live", "demo"], value="live", label="Mode")
     question = gr.Textbox(label="Your question")
     transcription_id = gr.Number(label="Transcription ID (optional)", precision=0)
     scenario = gr.Dropdown(
         choices=["answered", "insufficient", "error"],
         value="answered",
         label="Demo scenario (testing only)",
+        interactive=False,
     )
     ask_button = gr.Button("Ask", variant="primary")
 
@@ -114,11 +156,15 @@ with gr.Blocks(title="Stapfer evidence explorer") as demo:
     answer = gr.Textbox(label="Answer", interactive=False)
     source = gr.HTML(label="Original source", show_label=True, container=True, padding=True)
 
-    ask_button.click(
+    mode.change(on_mode_change, inputs=[mode],
+        outputs=[scenario, banner, status, answer, source], queue=False, api_name=False)
+    ask_button.click(clear_response, inputs=[mode], outputs=[banner, status, answer, source],
+        queue=False, api_name=False).then(
         on_ask,
-        inputs=[question, transcription_id, scenario],
+        inputs=[question, transcription_id, scenario, mode],
         outputs=[banner, status, answer, source],
+        api_name="ask",
     )
 
 if __name__ == "__main__":
-    demo.launch(theme=THEME, css=CSS)
+    demo.launch(server_name="127.0.0.1", share=False, theme=THEME, css=CSS)

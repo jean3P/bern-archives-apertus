@@ -44,7 +44,7 @@ bern-archives-apertus/
   runs/                  Runtime logs/receipts ignored except its README
 ```
 
-`app.py` is an assigned future file, not a working application already present in this scaffold. The agreed callable boundary is `core.service.search_records` and `core.service.answer_question`, returning the shapes in `contracts.py`. UI examples are always marked `mode: demo`; live mode requires real backend data and model replies.
+`app.py` now provides the evidence explorer with separate LIVE and DEMO modes. LIVE uses `core.service.answer_question` and requires a completed dataset plus the configured model connection; DEMO loads explicitly labelled fixtures without inference. Launch with `uv run --locked python app.py`; see [M1 instructions](docs/M1.md). The shared response shapes remain in `contracts.py`; live errors never fall back to fixtures.
 
 Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. The initial explicit/natural-language location checks succeeded; broader semantic quality and nonempty-evidence abstention remain unmeasured. See [dataset commands](docs/J2.md), [answer commands](docs/J3.md) and [evaluation instructions](docs/J4.md).
 
