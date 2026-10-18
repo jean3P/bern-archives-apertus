@@ -186,12 +186,23 @@ def test_absent_completion_marker_blocks_search(tmp_path):
 
 
 def test_existing_output_directory_is_never_overwritten(tmp_path):
+    source = tmp_path / "raw" / "absent.zip"
+    source.parent.mkdir()
     output = tmp_path / "existing"
     output.mkdir()
     (output / "keep.txt").write_text("keep", encoding="utf-8")
     with pytest.raises(FileExistsError):
-        build(tmp_path / "absent.zip", output)
+        build(source, output)
     assert (output / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_output_inside_raw_directory_is_rejected_before_creation(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    output = raw / "derived"
+    with pytest.raises(ValueError, match="raw input directory"):
+        build(raw / "absent.zip", output)
+    assert not output.exists()
 
 
 def test_full_orchestration_with_explicit_software_source_double(tmp_path, synthetic_dump, monkeypatch):
