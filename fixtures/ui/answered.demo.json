@@ -1,0 +1,16 @@
+{
+  "mode": "demo",
+  "status": "answered",
+  "answer": "The passage names the place as Hörndli.",
+  "sources": [
+    {
+      "record_id": "stapfer:answer:41",
+      "transcription_id": 16,
+      "question_number": "I.1",
+      "text_original": "Hörndli, heist der Ort, wo die $ Schull $$ ist.",
+      "archive_reference": "BAR B0 1000/1483, Nr. 1421, fol. 228-229v",
+      "pdf_page_index": null
+    }
+  ],
+  "message": "UI display fixture only. Source fields are from the supplied record; the English answer is an authored example, not a model reply."
+}

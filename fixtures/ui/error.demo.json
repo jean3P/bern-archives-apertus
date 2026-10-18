@@ -1,0 +1,7 @@
+{
+  "mode": "demo",
+  "status": "error",
+  "answer": null,
+  "sources": [],
+  "message": "UI display fixture only: simulate an unavailable service. Clear the previous answer and show the failure; do not invent a replacement answer."
+}

@@ -1,0 +1,10 @@
+# Review routing only. Branch protection is not configured by this scaffold.
+* @jean3P
+/ui/ @Dyane98
+/app.py @Dyane98
+/tests/ui/ @Dyane98
+/docs/USER_GUIDE.md @Dyane98
+# Shared contracts and dependency files stay Jean-owned to reduce overlap.
+/contracts.py @jean3P
+/pyproject.toml @jean3P
+/uv.lock @jean3P
