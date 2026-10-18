@@ -101,11 +101,46 @@ def decision_label(review) -> str:
     return next(label for label, value in DECISIONS.items() if value == stored)
 
 
-def case_table(run, reviews=None) -> list:
-    """One row per recorded case, in run order; nothing is filtered out."""
+FILTERS = ["All", "Pending", "Correct", "Incorrect", "Uncertain", "Technical error"]
+
+
+def is_technical_error(case) -> bool:
+    """Error responses, unattempted cases and definitive failures."""
+    return (case.get("observed_status") == "error" or not case.get("attempted", True)
+            or bool(case.get("definitive_failure")))
+
+
+def matches_filter(case, reviews, choice) -> bool:
+    if choice == "All":
+        return True
+    if choice == "Technical error":
+        return is_technical_error(case)
+    return decision_label(reviews.get(case["case_id"])) == choice
+
+
+def visible_case_ids(run, reviews, choice) -> list:
+    """Case IDs that pass the filter, in run order."""
+    if run is None:
+        return []
+    return [case["case_id"] for case in run["cases"] if matches_filter(case, reviews or {}, choice)]
+
+
+def review_progress(run, reviews, choice) -> str:
+    """How many cases are shown, plus review counts with their denominator (not final accuracy)."""
+    total = len(run["cases"])
+    shown = len(visible_case_ids(run, reviews, choice))
+    counts = " · ".join(f"{name}: {len(visible_case_ids(run, reviews, name))}" for name in FILTERS[1:])
+    return (f'<div class="review-panel"><strong>Showing {esc(choice)}:</strong> {shown} of {total} cases<br>'
+            f"<strong>Review progress (not final accuracy):</strong> {esc(counts)}</div>")
+
+
+def case_table(run, reviews=None, choice="All") -> list:
+    """One row per recorded case that passes the filter, in run order."""
     reviews = reviews or {}
     table = []
     for case in run["cases"]:
+        if not matches_filter(case, reviews, choice):
+            continue
         seconds = case.get("total_seconds")
         table.append([
             case["case_id"],
@@ -117,21 +152,30 @@ def case_table(run, reviews=None) -> list:
     return table
 
 
-def step_case(run, case_id, offset):
-    """Previous/next case ID, staying within the first and last case."""
-    if run is None or not run["cases"]:
-        return None
-    case_ids = [case["case_id"] for case in run["cases"]]
-    position = case_ids.index(case_id) if case_id in case_ids else 0
+def step_case(run, reviews, choice, case_id, offset):
+    """Previous/next case among the filtered ones, staying within the first and last."""
+    case_ids = visible_case_ids(run, reviews, choice)
+    if not case_ids:
+        return case_id
+    if case_id not in case_ids:
+        return case_ids[0]
+    position = case_ids.index(case_id)
     return case_ids[max(0, min(len(case_ids) - 1, position + offset))]
 
 
-def on_previous(run, case_id):
-    return step_case(run, case_id, -1)
+def on_previous(run, reviews, choice, case_id):
+    return step_case(run, reviews, choice, case_id, -1)
 
 
-def on_next(run, case_id):
-    return step_case(run, case_id, +1)
+def on_next(run, reviews, choice, case_id):
+    return step_case(run, reviews, choice, case_id, +1)
+
+
+def on_filter(run, reviews, choice):
+    """Refresh the table and counts for the chosen filter."""
+    if run is None:
+        return [], ""
+    return case_table(run, reviews, choice), review_progress(run, reviews, choice)
 
 
 def on_table_select(evt: gr.SelectData):
@@ -186,19 +230,19 @@ def on_show_form(run, reviews, case_id):
             review.get("notes", ""), review.get("suggestion", ""), "")
 
 
-def on_save_review(run, reviews, case_id, reviewer, decision, supported, notes, suggestion):
+def on_save_review(run, reviews, choice, case_id, reviewer, decision, supported, notes, suggestion):
     """Keep a valid review in memory and show it in the table; refuse invalid ones with a reason."""
     case = find_case(run, case_id)
     if case is None:
-        return reviews, gr.Dataframe(), '<p class="load-error">Load a run and choose a case first.</p>'
+        return reviews, gr.skip(), gr.skip(), '<p class="load-error">Load a run and choose a case first.</p>'
     try:
         review = make_review(case, reviewer, decision, supported, notes, suggestion)
     except ReviewError as exc:
-        return reviews, case_table(run, reviews), f'<p class="load-error">Not saved: {esc(exc)}</p>'
+        return reviews, gr.skip(), gr.skip(), f'<p class="load-error">Not saved: {esc(exc)}</p>'
     reviews = {**reviews, case_id: review}
     message = (f'<p class="review-ok">Review for {esc(case_id)} kept in memory. '
                "It is not exported yet; reloading the run discards it.</p>")
-    return reviews, case_table(run, reviews), message
+    return reviews, case_table(run, reviews, choice), review_progress(run, reviews, choice), message
 
 
 def build_app(default_run: str = "") -> gr.Blocks:
@@ -212,6 +256,8 @@ def build_app(default_run: str = "") -> gr.Blocks:
             run_path = gr.Textbox(label="Saved run folder", value=default_run, scale=4)
             load_button = gr.Button("Load", variant="primary", scale=1)
         run_info = gr.HTML(label="Run", show_label=True, container=True, padding=True)
+        filter_choice = gr.Radio(choices=FILTERS, value="All", label="Show")
+        filter_info = gr.HTML()
         cases = gr.Dataframe(headers=TABLE_HEADERS, value=[], interactive=False, wrap=True,
                              max_height=320, label="Cases (click a row to open it)")
         with gr.Row():
@@ -239,14 +285,17 @@ def build_app(default_run: str = "") -> gr.Blocks:
         panels = [question_panel, evidence_panel, reference_panel]
         form = [decision, supported, notes, suggestion, review_message]
         load_button.click(on_load, [run_path], [run_state, run_info, cases, case_id, reviews]).then(
+            on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
             on_select, [run_state, case_id], panels).then(
             on_show_form, [run_state, reviews, case_id], form)
         case_id.change(on_select, [run_state, case_id], panels)
         case_id.change(on_show_form, [run_state, reviews, case_id], form)
         save_button.click(on_save_review,
-                          [run_state, reviews, case_id, reviewer, decision, supported, notes, suggestion],
-                          [reviews, cases, review_message])
+                          [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
+                           notes, suggestion],
+                          [reviews, cases, filter_info, review_message])
+        filter_choice.change(on_filter, [run_state, reviews, filter_choice], [cases, filter_info])
         cases.select(on_table_select, None, case_id)
-        previous_button.click(on_previous, [run_state, case_id], case_id)
-        next_button.click(on_next, [run_state, case_id], case_id)
+        previous_button.click(on_previous, [run_state, reviews, filter_choice, case_id], case_id)
+        next_button.click(on_next, [run_state, reviews, filter_choice, case_id], case_id)
     return review
