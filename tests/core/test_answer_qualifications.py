@@ -24,20 +24,30 @@ RECORD = {"record_id": "stapfer:answer:901", "answer_id": 901, "transcription_id
 def proposed():
     return {"status": "answered", "claims": [{"text": "Seven tokens per term. Actual payment is irregular.",
         "citations": [{"record_id": RECORD["record_id"], "quote": TEXT}]}],
-        "message": "The source distinguishes the obligation from actual payment."}
+        "message": ""}
 
 
 def included():
     return {RECORD["record_id"]: {"record": RECORD, "delivered_passage": TEXT}}
 
 
-def test_original_schema_and_benign_message_are_preserved():
+def test_original_fields_separate_answered_claims_from_abstention_message():
     normalized = aq.normalize(proposed(), included())
     assert normalized["claims"][0]["text"] == "Seven tokens per term. Actual payment is irregular."
     assert normalized["message"] == proposed()["message"]
     schema = aq.answer_schema(ANSWER_SCHEMA)
-    assert schema == ANSWER_SCHEMA
+    assert schema["anyOf"][0]["properties"]["message"]["enum"] == [""]
+    assert schema["anyOf"][1]["properties"]["claims"]["maxItems"] == 0
+    assert schema["anyOf"][1]["properties"]["message"]["minLength"] == 1
     assert "qualifications" not in ANSWER_SCHEMA["properties"]["claims"]["items"]["required"]
+
+
+def test_v6_replay_keeps_its_message_but_new_decoder_contract_rejects_answer_in_message():
+    value = proposed()
+    value["message"] = "Additional uncited answer detail."
+    assert aq.normalize(value, included(), aq.ORIGINAL_VERSION) == value
+    with pytest.raises(ValueError, match="cited claims"):
+        aq.normalize(value, included())
 
 
 def test_saved_v5_replies_keep_their_original_offline_normalization():

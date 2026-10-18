@@ -1,9 +1,11 @@
 # Concise evidence answers
 
-Version6 of `--pipeline apertus-qualified` uses the original answer schema: status, claims and
-message, with text/citations per claim. It does not request the separate qualifications field
-introduced by version5. That earlier version and its saved results remain available for offline
-replay; they are not rewritten or treated as version6 results.
+Version6.1 of `--pipeline apertus-qualified` uses the original answer fields: status, claims and
+message, with text/citations per claim. Its decoder requires message to be empty for answered
+results, so substantive answer content cannot be placed in that uncited field. Insufficient-
+evidence replies retain empty claims and a nonempty explanatory message. It does not request
+the separate qualifications field introduced by version5. Saved version5 and version6 replies
+retain their original offline replay behavior and are never rewritten as version6.1 results.
 
 This candidate replaces the answer instructions with a shorter direct-answer prompt. It asks
 for all requested details and genuine exceptions, original wording even when unfamiliar, exact
@@ -26,7 +28,7 @@ uv run --locked python -m core.evaluate_cli run \
   --references evaluation/references/draft-v1 \
   --split development \
   --data-dir data/derived/j2-full \
-  --out runs/j4-development-concise-01 \
+  --out runs/j4-development-concise-02 \
   --allow-draft-references
 ```
 

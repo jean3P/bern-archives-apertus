@@ -153,7 +153,7 @@ def qualifications_receipts_valid(saved, events, delivered):
     from core import answer_qualifications as aq
     implementation = saved("implementation.json", {})
     version = implementation.get("version")
-    if (version not in (aq.VERSION, aq.LEGACY_VERSION) or implementation.get("model") != aq.MODEL
+    if (version not in (aq.VERSION, aq.ORIGINAL_VERSION, aq.LEGACY_VERSION) or implementation.get("model") != aq.MODEL
             or saved("input.json", {}).get("pipeline") != "apertus-qualified"
             or saved("summary.json", {}).get("pipeline") != "apertus-qualified"):
         return False
