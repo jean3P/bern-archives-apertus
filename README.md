@@ -4,7 +4,7 @@ An evidence-preserving pipeline and small search/answer demonstrator for the Uni
 
 ## Status
 
-J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3 has one correct explicit-code development answer and 82 passing software tests.** The first natural-language request failed at retrieval-plan validation; its scoped code-only correction is prepared, not rerun. See the [answer commands and limits](docs/J3.md). The UI remains separate S1/S2 work. No general historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
+J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3's backend baseline is closed:** the user reported 90 passing software tests, correct explicit/natural-language answers about the same location fact and an actual empty-route unsupported-question nonanswer. Earlier failures are preserved. **J4's evaluation runner and scoring records are implemented but not run or runtime-qualified.** See the [evaluation commands and review rubric](docs/J4.md). The UI remains separate S1/S2 work. No general historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
 
 ## Quick start
 
@@ -32,6 +32,7 @@ bern-archives-apertus/
   app.py                 Dyane98 creates the UI entry point during S1
   fixtures/ui/           Shared, Jean-reviewed DEMO payloads, not model replies
   tests/core/            Jean: backend tests
+  evaluation/            Jean: versioned evaluator-only reference snapshots
   tests/ui/              Dyane98: interface tests
   tests/test_contracts.py Jean: shared response checks
   docs/SETUP.md          Jean: runtime/setup instructions
@@ -45,7 +46,7 @@ bern-archives-apertus/
 
 `app.py` is an assigned future file, not a working application already present in this scaffold. The agreed callable boundary is `core.service.search_records` and `core.service.answer_question`, returning the shapes in `contracts.py`. UI examples are always marked `mode: demo`; live mode requires real backend data and model replies.
 
-Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. One explicit-code case has succeeded; the corrected natural-language path and broader semantic quality remain unvalidated. See [dataset commands](docs/J2.md) and [answer commands](docs/J3.md).
+Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. The initial explicit/natural-language location checks succeeded; broader semantic quality and nonempty-evidence abstention remain unmeasured. See [dataset commands](docs/J2.md), [answer commands](docs/J3.md) and [evaluation instructions](docs/J4.md).
 
 ```bash
 uv run --locked python -m core.answer_cli \
@@ -66,7 +67,7 @@ git pull --ff-only
 # Jean:
 git switch -c jean/backend
 # Dyane uses a separate clone and instead runs:
-git switch -c sister/ui
+git switch -c jeni/ui
 ```
 
 Each person runs only their own branch command. Do not rerun `switch -c` if the branch already exists; switch to it instead. Jean works in backend/configuration files, Dyane in UI/user-guide files. Commit only your assigned paths, not `git add .` over someone else's work. If the UI needs a contract/dependency change, agree it and let Jean make that change. Integrate early through a reviewed change; never resolve a conflict by discarding the other person's files.

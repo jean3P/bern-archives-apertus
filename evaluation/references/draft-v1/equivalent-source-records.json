@@ -1,0 +1,28 @@
+{
+  "status": "assistant_source_checked_human_review_pending",
+  "purpose": "Evaluator-only alternatives to avoid false failures on duplicated source text; never runtime lookup hints or independent corroboration counts.",
+  "rules": ["Same source dossier, same survey question and same quoted span", "For EVAL-09 and EVAL-25 only, the identical complete teacher paragraph repeated under several survey questions is also accepted", "Identical short text under a different question is not automatically equivalent", "Other supporting citations require source-context review, not automatic rejection solely for using a different ID"],
+  "alternatives": [
+    {"case_id":"EVAL-04","base_answer_id":62589,"accepted_answer_ids":[62589,83038,83086,83134]},
+    {"case_id":"EVAL-06","base_answer_id":104302,"accepted_answer_ids":[104302,109314]},
+    {"case_id":"EVAL-06","base_answer_id":104306,"accepted_answer_ids":[104306,109318]},
+    {"case_id":"EVAL-09","base_answer_id":131600,"accepted_answer_ids":[44670,131599,131600,131601,131602,131603,131604]},
+    {"case_id":"EVAL-10","base_answer_id":62607,"accepted_answer_ids":[62607,83053,83101,83149]},
+    {"case_id":"EVAL-12","base_answer_id":104323,"accepted_answer_ids":[104323,109335]},
+    {"case_id":"EVAL-12","base_answer_id":104324,"accepted_answer_ids":[104324,109336]},
+    {"case_id":"EVAL-24","base_answer_id":104334,"accepted_answer_ids":[104334,109346]},
+    {"case_id":"EVAL-24","base_answer_id":104302,"accepted_answer_ids":[104302,109314]},
+    {"case_id":"EVAL-25","base_answer_id":131600,"accepted_answer_ids":[44670,131599,131600,131601,131602,131603,131604]},
+    {"case_id":"EVAL-26","base_answer_id":104323,"accepted_answer_ids":[104323,109335]},
+    {"case_id":"EVAL-27","base_answer_id":62607,"accepted_answer_ids":[62607,83053,83101,83149]}
+  ],
+  "negative_context_control": {
+    "case_id": "EVAL-24",
+    "quoted_text": "$ rien $$",
+    "fee_question_id": 38,
+    "fee_answer_ids": [104334,109346],
+    "not_fee_answer_ids": [104346,109354],
+    "not_fee_question_id": 47,
+    "reason": "Question 47 asks about abolished feudal revenues, not school fees. The identical word cannot support fee attribution without the correct context."
+  }
+}
