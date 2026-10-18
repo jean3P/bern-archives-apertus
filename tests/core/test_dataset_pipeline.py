@@ -6,7 +6,7 @@ import json
 import pytest
 
 from core.dataset import normalize_search, project
-from core.j2 import build, verify
+from core.dataset_cli import build, verify
 from core.policy import PUBLIC_FIELDS, SQL_MEMBER, SQL_SHA256
 from core.search import build_index, lookup_source, search_records
 from core.sql_dump import Dump, literal, parse_dump, read_dump, statements, value_rows
@@ -170,13 +170,13 @@ def test_existing_output_directory_is_never_overwritten(tmp_path):
 
 
 def test_full_orchestration_with_explicit_software_source_double(tmp_path, synthetic_dump, monkeypatch):
-    import core.j2 as j2
+    import core.dataset_cli as dataset_cli
     source = tmp_path / "raw" / "software-source.zip"
     source.parent.mkdir()
     source.write_bytes(b"SOFTWARE FIXTURE, NOT THE ACTUAL SOURCE")
-    original_hash = j2.file_hash
-    monkeypatch.setattr(j2, "read_dump", lambda path: synthetic_dump)
-    monkeypatch.setattr(j2, "file_hash", lambda path: SQL_SHA256 if path == source.resolve() else original_hash(path))
+    original_hash = dataset_cli.file_hash
+    monkeypatch.setattr(dataset_cli, "read_dump", lambda path: synthetic_dump)
+    monkeypatch.setattr(dataset_cli, "file_hash", lambda path: SQL_SHA256 if path == source.resolve() else original_hash(path))
     output = tmp_path / "derived" / "fixture"
     report = build(source, output, 16)
     assert report["status"] == "validated"

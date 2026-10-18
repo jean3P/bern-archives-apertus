@@ -1,4 +1,4 @@
-"""J2 import/export/search CLI. Explicit execution only; no imports start a build."""
+"""Dataset import/export/search CLI. Explicit execution only; imports never build data."""
 
 import argparse
 from contextlib import closing
@@ -170,7 +170,7 @@ def build(source, output, transcription_id=None):
             "policy_version": POLICY_VERSION, "schema_version": SCHEMA_VERSION,
             "code_commit": code_commit,
             "implementation_sha256": {"core/" + name + ".py": file_hash(Path(__file__).parent / (name + ".py"))
-                for name in ("j2", "policy", "sql_dump", "dataset", "record_schema", "search", "service")},
+                for name in ("dataset_cli", "policy", "sql_dump", "dataset", "record_schema", "search", "service")},
             "python": sys.version, "built_at_utc": datetime.now(timezone.utc).isoformat(),
             "scope": report["scope"], "selected_transcription_id": transcription_id,
             "model_calls": 0, "source_sql_executed": False,
@@ -232,7 +232,7 @@ def main():
                 canton_1799=args.canton_1799, question_code=args.question_code,
                 limit=args.limit, data_dir=args.data_dir)
     except (ValueError, LookupError, OSError, sqlite3.Error) as error:
-        parser.exit(1, "J2 failed: " + str(error) + "\n")
+        parser.exit(1, "Dataset command failed: " + str(error) + "\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
