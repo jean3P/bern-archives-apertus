@@ -15,8 +15,8 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--out", type=Path, help="New run directory; existing paths are never overwritten")
     parser.add_argument("--no-query-rewrite", action="store_true", help="Diagnostic literal/explicit-code retrieval only")
-    parser.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"), default="apertus",
-                        help="Baseline, concise cited answers, rejected parts experiment, or inactive hybrid")
+    parser.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"), default="apertus",
+                        help="Baseline, concise Apertus/Qwen-only answers, rejected parts experiment, or inactive hybrid")
     args = parser.parse_args()
     try:
         result, directory = run_answer(args.question, args.transcription_id,

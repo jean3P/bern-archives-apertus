@@ -45,7 +45,7 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
     events = read_jsonl(directory / "events.jsonl") if "events.jsonl" in receipt_hashes else []
     requests = [event for event in events if event.get("event") == "generation_request"]
     calls, repairs = summary.get("generation_posts_attempted"), summary.get("format_retries")
-    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
+    if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Unknown inspection pipeline")
     cap = 4 if pipeline == "qwen-apertus" else 3
     budget_valid = (not attempted or (type(calls) is int and 0 <= calls <= cap and calls == len(requests)
@@ -87,8 +87,8 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
         protocol_valid = protocol_valid and hybrid_receipts_valid(saved, events, delivered=delivered)
     if attempted and pipeline == "apertus-facets" and status != "error":
         protocol_valid = protocol_valid and parts_receipts_valid(saved, events, delivered=delivered)
-    if attempted and pipeline == "apertus-qualified":
-        protocol_valid = protocol_valid and qualifications_receipts_valid(saved, events, delivered)
+    if attempted and pipeline in ("apertus-qualified", "qwen-only"):
+        protocol_valid = protocol_valid and qualifications_receipts_valid(saved, events, delivered, pipeline=pipeline)
     claims = saved("validated_claims.json", None)
     citation_valid = None
     if status == "answered":
@@ -149,27 +149,31 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
                                      "response": response, "attempted": attempted})}
 
 
-def qualifications_receipts_valid(saved, events, delivered):
+def qualifications_receipts_valid(saved, events, delivered, *, pipeline="apertus-qualified"):
     from core import answer_qualifications as aq
     implementation = saved("implementation.json", {})
     version = implementation.get("version")
-    if (version not in (aq.VERSION, aq.ORIGINAL_VERSION, aq.LEGACY_VERSION) or implementation.get("model") != aq.MODEL
-            or saved("input.json", {}).get("pipeline") != "apertus-qualified"
-            or saved("summary.json", {}).get("pipeline") != "apertus-qualified"):
+    if pipeline not in ("apertus-qualified", "qwen-only"):
+        return False
+    model = aq.QWEN_MODEL if pipeline == "qwen-only" else aq.MODEL
+    versions = (aq.VERSION,) if pipeline == "qwen-only" else (aq.VERSION, aq.ORIGINAL_VERSION, aq.LEGACY_VERSION)
+    if (version not in versions or implementation.get("model") != model
+            or saved("input.json", {}).get("pipeline") != pipeline
+            or saved("summary.json", {}).get("pipeline") != pipeline):
         return False
     pending, answers = None, []
     for event in events:
         if event.get("event") == "generation_request":
             stage, body = event.get("stage"), event.get("request", {})
             limit = {"retrieval_plan": 180, "cited_answer": 512}.get(stage)
-            if pending is not None or limit is None or body.get("model") != aq.MODEL or body.get("max_tokens") != limit:
+            if pending is not None or limit is None or body.get("model") != model or body.get("max_tokens") != limit:
                 return False
             pending = stage
         elif event.get("event") == "generation_response":
             if event.get("stage") != pending or event.get("http_status") != 200:
                 return False
             wire = strict_loads(event["body"])
-            if wire.get("model") != aq.MODEL or len(wire.get("choices", [])) != 1:
+            if wire.get("model") != model or len(wire.get("choices", [])) != 1:
                 return False
             if wire["choices"][0].get("finish_reason") != "stop":
                 return False

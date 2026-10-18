@@ -79,11 +79,13 @@ def test_abstention_keeps_its_limitation_and_cannot_carry_positive_claims():
         aq.normalize(value, included())
 
 
-def test_existing_router_single_answer_retry_and_offline_receipt_replay(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pipeline,model", [("apertus-qualified", aq.MODEL), ("qwen-only", aq.QWEN_MODEL)])
+def test_existing_router_single_answer_retry_and_offline_receipt_replay(tmp_path, monkeypatch, pipeline, model):
     def denied(*args, **kwargs):
         raise AssertionError("Real network is forbidden")
     monkeypatch.setattr("httpx.HTTPTransport.handle_request", denied)
     monkeypatch.setattr("core.answering.settings", lambda: Settings())
+    monkeypatch.setattr("core.answering.qwen_settings", lambda: Settings(base_url="http://127.0.0.1:8012/v1", model=aq.QWEN_MODEL))
     directory = tmp_path / "data"
     directory.mkdir()
     catalogue = [{"question_id": 1, "question_number": "I.1", "text_original": "Fees", "text_french": None}]
@@ -101,20 +103,36 @@ def test_existing_router_single_answer_retry_and_offline_receipt_replay(tmp_path
     requests = []
     def wire(request):
         if request.url.path.endswith("/models"):
-            return httpx.Response(200, json={"data": [{"id": aq.MODEL}]})
+            return httpx.Response(200, json={"data": [{"id": model}]})
         payload = json.loads(request.content)
         requests.append(payload)
-        return httpx.Response(200, json={"model": aq.MODEL,
+        assert payload["model"] == model
+        return httpx.Response(200, json={"model": model,
             "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(next(replies))}}]})
     question = "What fee and payment conditions are reported?"
     result, run = run_answer(question, 101, data_dir=directory, out=tmp_path / "run",
-        pipeline="apertus-qualified", transport=httpx.MockTransport(wire))
+        pipeline=pipeline, transport=httpx.MockTransport(wire))
     assert result["status"] == "answered" and "Actual payment is irregular." in result["answer"]
     assert [body["max_tokens"] for body in requests] == [180, 512, 512]
     assert not (run / "question_interpretation.json").exists()
     case = {"case_id": "SOFTWARE", "topic": "synthetic", "input": {"question": question,
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 901, "quote": TEXT}]}
     record = inspect_case(case, run, {"attempted": True, "response": result}, {"alternatives": []},
-                          "software_fixture", pipeline="apertus-qualified")
+                          "software_fixture", pipeline=pipeline)
     assert record["protocol_valid"] and record["mechanical_citation_valid"]
     assert record["generation_posts_attempted"] == 3 and record["format_retries"] == 1
+    from core.answering import retrieval_instructions
+    assert requests[0]["messages"][0]["content"] == retrieval_instructions(scoped=True)
+    assert requests[1]["messages"][0]["content"] == aq.INSTRUCTIONS
+    assert requests[1]["response_format"]["json_schema"]["schema"] == aq.answer_schema(ANSWER_SCHEMA)
+    assert not (run / "qwen-serving.json").exists()  # No hybrid second client.
+
+
+def test_qwen_only_rejects_apertus_identity_before_dataset_or_generation(tmp_path):
+    def denied(request):
+        raise AssertionError("No request is allowed for a mismatched model")
+    result, run = run_answer("Synthetic question", 101, data_dir=tmp_path / "absent",
+        out=tmp_path / "wrong-model", pipeline="qwen-only", config=Settings(),
+        transport=httpx.MockTransport(denied))
+    assert result["status"] == "error"
+    assert json.loads((run / "summary.json").read_text())["generation_posts_attempted"] == 0

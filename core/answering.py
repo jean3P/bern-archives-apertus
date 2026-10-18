@@ -223,9 +223,9 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                config=None, transport=None, rewrite=True, pipeline="apertus",
                qwen_config=None, qwen_transport=None):
     """Explicitly run one request. All real/model-fixture results get separate logs."""
-    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
-        raise ValueError("Choose apertus, apertus-qualified, apertus-facets or qwen-apertus")
-    qualified = pipeline == "apertus-qualified"
+    if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
+        raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
+    qualified = pipeline in ("apertus-qualified", "qwen-only")
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"
     structured = hybrid or per_part
@@ -257,6 +257,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if qualified:
         from core import answer_qualifications as aq
         modules.append(Path(aq.__file__))
+        answer_model = aq.QWEN_MODEL if pipeline == "qwen-only" else aq.MODEL
     answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
@@ -277,7 +278,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "mechanical_citation_checks_only": True,
         **({"pipeline": pipeline, "qualification_field": aq.OUTPUT_MODE,
             "max_generation_posts": 3, "max_shared_validation_retries": 1,
-            "answer_token_limit": 512, "model": aq.MODEL} if qualified else {}),
+            "answer_token_limit": 512, "model": answer_model} if qualified else {}),
         **({"pipeline": pipeline, "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "stage_models": {stage: fa.MODEL for stage in fa.TOKENS}, "stage_token_limits": fa.TOKENS,
             "facet_prompt_sha256": {"interpretation": hashlib.sha256(fa.INTERPRET_INSTRUCTIONS.encode()).hexdigest(),
@@ -289,12 +290,15 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                  ("answer", qe.FINAL_INSTRUCTIONS))}} if hybrid else {})})
     packet_hash = None
 
+    def selected_config():
+        return config or (qwen_settings() if pipeline == "qwen-only" else settings())
+
     def get_client():
         nonlocal client
         if client is None:
-            selected = config or settings()
-            if qualified and selected.model != aq.MODEL:
-                raise ValueError("Qualification candidate requires Apertus8B")
+            selected = selected_config()
+            if qualified and selected.model != answer_model:
+                raise ValueError("The selected cited-answer pipeline requires its pinned model")
             if structured and selected.model != qe.APERTUS_MODEL:
                 raise ValueError("Structured generation requires the configured Apertus8B model")
             client = ApertusClient(selected, transport=transport)
@@ -341,8 +345,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             raise ValueError("Use a nonempty question of at most 2000 characters")
         if transcription_id is not None and (type(transcription_id) is not int or transcription_id < 1):
             raise ValueError("transcription_id must be a positive integer")
-        if qualified and (config or settings()).model != aq.MODEL:
-            raise ValueError("Qualification candidate requires Apertus8B; no generation request was made")
+        if qualified and selected_config().model != answer_model:
+            raise ValueError("The selected cited-answer pipeline requires its pinned model; no generation request was made")
         if structured and (config or settings()).model != qe.APERTUS_MODEL:
             raise ValueError("Structured generation requires Apertus8B; no generation request was made")
         store = EvidenceStore(directory)
