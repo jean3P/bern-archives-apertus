@@ -1,4 +1,4 @@
-"""Saved-run review screen (S5): read-only display of recorded development cases."""
+"""Saved-run review screen: no models, search or changes to original results."""
 
 import html
 import json
@@ -6,11 +6,11 @@ import json
 import gradio as gr
 
 from ui.review_records import (DECISIONS, NOT_COUNTED, ReviewError, RunLoadError, export_session,
-                               import_session, list_exports, load_case_file, load_references, load_run,
+                               discover_runs, import_session, list_exports, load_case_file, load_references, load_run,
                                make_review)
 
 
-BANNER = "## SAVED RUN REVIEW — recorded development results, not a fresh LIVE answer"
+BANNER = "## SAVED RUN REVIEW — recorded results, not a fresh LIVE answer"
 
 THEME = gr.themes.Default().set(
     block_title_text_size="*text_lg",
@@ -45,6 +45,8 @@ def run_summary(run: dict) -> str:
     return '<div class="review-panel">' + rows([
         ("Run", run["directory"].name),
         ("Split", manifest.get("split")),
+        ("Review scope", "Previously used evaluation questions; not an untouched test set"
+         if manifest.get("split") == "evaluation" else "Development questions"),
         ("Reference status", manifest.get("reference_review", {}).get("status")),
         ("Recorded at (UTC)", manifest.get("created_at_utc")),
         ("Model", manifest.get("settings", {}).get("model")),
@@ -109,9 +111,10 @@ FILTERS = ["All", "Pending", "Correct", "Incorrect", "Uncertain", "Technical err
 
 
 def is_technical_error(case) -> bool:
-    """Error responses, unattempted cases and definitive failures."""
-    return (case.get("observed_status") == "error" or not case.get("attempted", True)
-            or bool(case.get("definitive_failure")))
+    """Transport/receipt failures, not every mismatch against a draft reference."""
+    return (case.get("observed_status") in ("error", "receipt_error")
+            or not case.get("attempted", True) or case.get("protocol_valid") is False
+            or case.get("response_contract_valid") is False)
 
 
 def matches_filter(case, reviews, choice) -> bool:
@@ -189,11 +192,12 @@ def on_table_select(dirty, evt: gr.SelectData):
     return evt.row_value[0]
 
 
-def on_load(run_path):
+def on_load(run_path, allow_evaluation=False):
     """Load and verify a run; on failure clear everything and explain why."""
     try:
-        run = load_run(run_path)
-        run["references"] = load_references(run["directory"])
+        run = load_run(run_path, allow_evaluation=allow_evaluation)
+        run["references"] = load_references(run["directory"], run["manifest"]["split"],
+                                             allow_evaluation=allow_evaluation)
     except (RunLoadError, ValueError, OSError) as exc:
         message = f'<p class="load-error">Could not load run: {esc(exc)}</p>'
         return None, message, [], gr.Dropdown(choices=[], value=None), {}
@@ -224,6 +228,11 @@ TECHNICAL_FILES = {
     "Validated claims (validated_claims.json)": "validated_claims.json",
     "Calls, retries and timing (summary.json)": "summary.json",
     "Model requests and responses (events.jsonl)": "events.jsonl",
+    "Question-to-field bindings (binding_plan.json)": "binding_plan.json",
+    "Field-owned evidence (binding_evidence.json)": "binding_evidence.json",
+    "Recorded answer parts (binding_answer.json)": "binding_answer.json",
+    "Unresolved-evidence hold (binding_hold.json)": "binding_hold.json",
+    "Source-derived completeness checks (binding_completeness.json)": "binding_completeness.json",
 }
 
 
@@ -391,16 +400,25 @@ def on_resume(run, choice, session_name):
     return reviews, case_table(run, reviews, choice), review_progress(run, reviews, choice), message
 
 
-def build_app(default_run: str = "") -> gr.Blocks:
+def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False) -> gr.Blocks:
+    choices = discover_runs(runs_root, allow_evaluation=allow_evaluation)
+    if default_run and default_run not in choices:
+        choices.append(default_run)
+    selected = default_run or (choices[0] if choices else None)
     with gr.Blocks(title="Saved run review", analytics_enabled=False) as review:
         gr.Markdown("# Stapfer saved run review")
         gr.Markdown(BANNER)
+        if allow_evaluation:
+            gr.Markdown("**Evaluation-split review enabled explicitly.** These questions have already "
+                        "been used for development. Draft references are not approved truth. "
+                        "This is Q&A review, not the separate 100-document audit.")
         run_state = gr.State(None)
         reviews = gr.State({})
         dirty = gr.State(False)
 
         with gr.Row():
-            run_path = gr.Textbox(label="Saved run folder", value=default_run, scale=4)
+            run_path = gr.Dropdown(label="Saved run folder", choices=choices, value=selected,
+                                   allow_custom_value=True, scale=4)
             load_button = gr.Button("Load", variant="primary", scale=1)
         run_info = gr.HTML(label="Run", show_label=True, container=True, padding=True)
         filter_choice = gr.Radio(choices=FILTERS, value="All", label="Show")
@@ -452,7 +470,8 @@ def build_app(default_run: str = "") -> gr.Blocks:
         lock = [dirty, unsaved_marker, case_id, previous_button, next_button, load_button, resume_button,
                 export_button]
         form_values = [run_state, reviews, case_id, decision, supported, notes, suggestion]
-        load_button.click(on_load, [run_path], [run_state, run_info, cases, case_id, reviews]).then(
+        load_button.click(lambda path: on_load(path, allow_evaluation),
+                          [run_path], [run_state, run_info, cases, case_id, reviews]).then(
             on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
             on_select, [run_state, case_id], panels).then(
             on_show_form, [run_state, reviews, case_id], form).then(

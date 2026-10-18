@@ -1,4 +1,4 @@
-"""Read-only loading of saved J4 development runs for human review (S5)."""
+"""Read-only saved-run review; evaluation references require explicit opt-in."""
 
 import re
 from datetime import datetime, timezone
@@ -17,6 +17,8 @@ class RunLoadError(ValueError):
 CASE_FILES = {
     "input.json", "response.json", "retrieved_sources.json", "evidence.json",
     "validated_claims.json", "summary.json", "events.jsonl",
+    "binding_plan.json", "binding_route.json", "binding_evidence.json",
+    "binding_answer.json", "binding_hold.json", "binding_completeness.json",
 }
 SAFE_CASE_ID = re.compile(r"[A-Za-z0-9_-]+")
 EXPORT_ROOT = Path(__file__).resolve().parent.parent / "runs" / "review-exports"
@@ -31,7 +33,7 @@ NOT_COUNTED = "Not counted"
 class ReviewError(ValueError):
     """A review the scorer would reject; the message is shown to the reviewer."""
 
-def load_run(run_dir) -> dict:
+def load_run(run_dir, *, allow_evaluation=False) -> dict:
     """Check the seal, then read the manifest and the ordered case records."""
     directory = Path(run_dir).resolve()
     if not (directory / "_COMPLETE.json").is_file():
@@ -41,16 +43,40 @@ def load_run(run_dir) -> dict:
     except ValueError as exc:
         raise RunLoadError(f"Run changed or incomplete: {exc}") from exc
     manifest = read_json(directory / "run-manifest.json")
-    if manifest.get("split") != "development":
-        raise RunLoadError("Only development runs can be reviewed in this version.")
+    split = manifest.get("split")
+    if split != "development" and not (allow_evaluation and split == "evaluation"):
+        raise RunLoadError("Only development runs are enabled. Use --allow-evaluation only for an already-used evaluation split.")
     cases = read_jsonl(directory / "case-scores.jsonl")
     return {"directory": directory, "seal": seal, "manifest": manifest, "cases": cases}
 
 
-def load_references(directory) -> dict:
-    """Draft development references by case ID. Never opens the evaluation set."""
-    path = child_file(directory, "references/development-questions.jsonl")
+def load_references(directory, split="development", *, allow_evaluation=False) -> dict:
+    """Open only the chosen split; future evaluation remains hidden by default."""
+    if split != "development" and not (allow_evaluation and split == "evaluation"):
+        raise RunLoadError("Evaluation references require explicit review opt-in.")
+    path = child_file(directory, f"references/{split}-questions.jsonl")
     return {ref["case_id"]: ref for ref in read_jsonl(path)}
+
+
+def discover_runs(root, *, allow_evaluation=False) -> list:
+    """List immediate completed runs only, never historical archive descendants."""
+    directory = Path(root).resolve()
+    if not directory.is_dir():
+        return []
+    found = []
+    for path in sorted(directory.iterdir()):
+        if path.is_symlink() or not path.is_dir() or path.name.startswith(("_", ".")):
+            continue
+        if not (path / "_COMPLETE.json").is_file():
+            continue
+        try:
+            manifest = read_json(child_file(path, "run-manifest.json"))
+        except (OSError, ValueError):
+            continue
+        split = manifest.get("split")
+        if split == "development" or (allow_evaluation and split == "evaluation"):
+            found.append(str(path))
+    return found
 
 
 def load_case_file(directory, case_id: str, name: str):
