@@ -1,0 +1,2 @@
+# Reference checksums describe exact bytes, including line endings.
+evaluation/references/** -text

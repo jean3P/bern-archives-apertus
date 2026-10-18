@@ -1,0 +1,61 @@
+{
+  "version": "j4-reference-draft-v1",
+  "created": "2026-10-18",
+  "status": "source_checked_draft_snapshot_human_review_pending",
+  "benchmark_execution_authorized": false,
+  "model_runs_performed": 0,
+  "human_reference_approval": false,
+  "source_review_actor": "assistant",
+  "source": {
+    "archive": "../data/raw/stapferappdb_final.sql.zip",
+    "sha256": "68eba6c4a7cc13eb3e0b6239b00a6ee21e2e0996a24de69224c3915480941c97",
+    "member": "stapferappdb_final_10.5.16.sql",
+    "admitted_release_status": "Internet",
+    "field_policy": "Existing J2 public-field allowlist; no contributor data, notes or binary timestamp decoding",
+    "read_method": "Independent read-only PowerShell/.NET literal extraction, not application importer or search index",
+    "sql_executed": false,
+    "binary_fields_decoded": false,
+    "source_row_counts": {"t_frage":60,"t_transkription":2250,"t_schule":3229,"t_antwort":92524}
+  },
+  "backend_reference_commit": "c0d7b6b9f8605a2699c61d618c8ad0c2a95c49a6",
+  "final_m1_candidate_commit": null,
+  "splits": {
+    "development": {"cases":20,"reference_dossiers":[16,2069,2389]},
+    "evaluation": {"cases":30,"answerable":24,"expected_nonanswers":6,"reference_dossiers":[130,457,772,1106,1448,1753]},
+    "reference_dossier_overlap": [],
+    "evaluation_tags": {"archive_wide":4,"natural_language":9,"compound":18,"french_query":3,"french_source":5,"nonempty_packet_intended_not_observed":4},
+    "case_order": "Ascending case_id within each split; never tune between evaluation cases",
+    "independence_limit": "Thirty questions cover six reference dossiers, not thirty independent documents; search corpus still contains all public development/evaluation records"
+  },
+  "question_selection": "Initial candidate dossiers were chosen at source-ID-sorted positions 100,400,700,1000,1300,1600,1900,2200 (zero-based). First six are evaluation dossiers, last two plus known dossier16 are development. Questions were authored from inspected public source fields before any candidate outputs. This is a purposive development benchmark, not a representative archive sample.",
+  "reference_integrity": {
+    "quoted_spans_checked": 67,
+    "quote_mismatches": 0,
+    "alternate_source_bindings_checked": 40,
+    "runtime_input_fields": ["question","transcription_id"],
+    "evaluator_only_fields": ["expected_status","required_facts","forbidden_inferences","evidence","reference_scope","expected_message","tags"],
+    "semantic_scoring": "Reviewer checks required meaning and unsupported additions; do not use exact English string equality or source-ID equality as a substitute for support",
+    "alternate_citation_policy": "Use the scoped alternatives file for known duplicated passages; other IDs require source-context review, never automatic approval from a short matching word"
+  },
+  "document_audit": {"selected":100,"unique":100,"strata":5,"per_stratum":20,"reviewed":0,"correct":null,"structural_errors":null},
+  "archive_references": {
+    "16":"BAR B0 1000/1483, Nr. 1421, fol. 228-229v",
+    "130":"BAR B0 1000/1483, Nr. 1471, fol. 52-53v",
+    "457":"BAR B0 1000/1483, Nr. 1458, fol. 241",
+    "772":"BAR B0 1000/1483, Nr. 1429, fol. 160-161v",
+    "1106":"BAR B0 1000/1483, Nr. 1471, fol. 208-211",
+    "1448":"BAR B0 1000/1483, Nr. 1431, fol. 220-221v",
+    "1753":"BAR B0 1000/1483, Nr. 1444, fol. 205-206v",
+    "2069":"BAR B0 1000/1483, Nr. 1426, fol. 136-137v",
+    "2389":"BAR B0 1000/1483, Nr. 1461, fol. 130-131"
+  },
+  "artifact_sha256": {
+    "development-questions.jsonl":"127d7de82da7474193936b92ce6a44e305e6058b646d2ccd3f09b5e7c82fc26c",
+    "evaluation-questions.jsonl":"48bf9b2349405f3d3a0b6eaef6a690aff94e3a414ded059e732150d2f1d94c39",
+    "document-audit-sample.json":"b1e01beadd8816a5bf7b5981e74533d12e9ca815ee5a04f5c98630d5fa00d117",
+    "equivalent-source-records.json":"f11d2dddd6e99a4b828c730d80212f67602e98023ae72adc173a40dae84fa557",
+    "Read-PublicReferenceSource.ps1":"937475c8c985b1f13abceb7bce2dd8c8afb709fefff10ec3a8544925fb0ed64e"
+  },
+  "execution_gates": ["Jean reviews and approves the drafted questions, expected meaning and scoped nonanswers", "Freeze the approved reference version before acquiring candidate replies", "M1 UI/evidence path completed and actual candidate commit recorded", "Explicit authorization to run J4", "A separate evaluator/runner still needs implementation; no new evaluation CLI exists yet"],
+  "preparation_limits": ["Not an official score, accuracy estimate or human-approved gold set", "No document has passed the 100-record audit yet", "No Apertus request, application query, pytest, SQL statement or remote service operation was executed", "Initial whole-file UTF8 reading rejected binary timestamp bytes; two expansive preparation scans were cancelled; final bounded nonbacktracking extraction succeeded", "No benchmark output was used to author or tune these references", "Local Obsidian preparation only; no Git push, H100 update or jeni/ui change"]
+}
