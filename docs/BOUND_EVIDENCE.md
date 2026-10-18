@@ -6,6 +6,7 @@ The opt-in `bound` mode preserves the complete original question, assigns source
 
 - A scoped detail has one catalogue field or an explicit unresolved binding. An empty binding never expands to all retrieved passages. Named-entity retrieval retains its existing unique-scope procedure and may bind a combined question to several requested fields.
 - Routing selects where a fact would be recorded in the catalogue; it does not certify that an archival answer exists. The original and French survey definitions accompany the bound passages.
+- When the user explicitly names several survey codes, their actual passages are retrieved before binding. A field title alone may be too narrow to describe everything the historical answer contains. This uses the supplied scope, not benchmark source IDs or expected answers.
 - Source-code introductions and trailing scope clauses are not extra answer requirements. The original user question itself is never rewritten.
 - Every requested detail must have a separate keyed answer. Its citation choices are restricted to records from its bound field, even when identical passages occur under several fields.
 - Software copies original quotation text and applies the existing source-ID, exact-quote and response-format checks. A question echo, missing answer part or citation from another field is rejected.

@@ -120,6 +120,10 @@ def test_runtime_keeps_full_question_and_replays_receipts(tmp_path, pipeline, mo
         transport=httpx.MockTransport(wire))
     assert response["status"] == ("insufficient_evidence" if unresolved else "answered")
     assert len(requests) == (1 if unresolved else 2)
+    routed = json.loads(requests[0]["messages"][1]["content"])
+    assert {row["question_number"] for group in routed["scoped_original_passages"]
+            for row in group["records"]} == {"I.1", "I.1.d"}
+    assert all(group["transcription_id"] == 101 for group in routed["scoped_original_passages"])
     if not unresolved:
         assert json.loads(requests[1]["messages"][1]["content"])["question"] == question
     case = {"case_id": "SYNTHETIC", "topic": "synthetic", "input": {

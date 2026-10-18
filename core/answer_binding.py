@@ -10,9 +10,9 @@ import re
 
 from core import answer_coverage as previous
 from core import entity_retrieval as er
-from core.evidence import explicit_codes, validate_answer
+from core.evidence import explicit_codes, make_packet, validate_answer
 
-VERSION = "field-bound-v2-scope-and-metadata"
+VERSION = "field-bound-v3-explicit-source-first"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 1024
 PLAN_INSTRUCTIONS = """Bind each requested detail to its survey catalogue FIELD, not to a guessed answer.
@@ -90,6 +90,7 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
         log.write("binding_plan.json", plan)
         return cards, reason, plan
     requirements = question_units(question, catalogue)
+    scoped_cards = None
     if len(explicit) == 1:
         for item in requirements:
             item["question_codes"] = explicit
@@ -104,6 +105,15 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
                 "parent": (parent.get("text_original") or "")[:100]})
         payload = {"question": question, "transcription_id": transcription_id,
                    "requirements": requirements, "catalogue": view}
+        if explicit:
+            # The caller has already supplied these source fields. Retrieve
+            # their real answers before binding: field titles alone may not
+            # describe every detail that a historical response contains.
+            scoped_cards, _ = retrieve(question, transcription_id, catalogue, directory, get_client, log,
+                                       prepared_plan={"question_codes": explicit})
+            scoped_packet, _, omitted = make_packet(store.records(scoped_cards), catalogue)
+            payload["scoped_original_passages"] = scoped_packet
+            payload["scoped_omitted_record_ids"] = omitted
         log.write("binding_route_input.json", payload)
         raw = strict_json(call_model(get_client(), [{"role": "system", "content": PLAN_INSTRUCTIONS},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
@@ -120,8 +130,11 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
     plan = {"entities": [], "requirements": requirements, "scope": "supplied_transcription"}
     log.write("binding_plan.json", plan)
     codes = list(dict.fromkeys(code for item in requirements for code in item["question_codes"]))
-    cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log,
-                            prepared_plan={"question_codes": codes}) if codes else ([], None)
+    if scoped_cards is not None:
+        cards, reason = [card for card in scoped_cards if card["question_number"] in codes], None
+    else:
+        cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log,
+                                prepared_plan={"question_codes": codes}) if codes else ([], None)
     if any(not item["question_codes"] for item in requirements):
         reason = "A requested detail has no resolved survey-field binding; no broad-evidence fallback was used."
     return cards, reason, plan
