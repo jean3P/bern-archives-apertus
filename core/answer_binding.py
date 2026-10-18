@@ -133,6 +133,9 @@ def bound_units(plan, packet):
         for row in group["records"]:
             spans.append({"span_id": f"s{len(spans)+1}", "record_id": row["record_id"],
                           "question_code": row["question_number"], "quote": group["passage"],
+                          "survey_question": row.get("survey_question"),
+                          "survey_question_french": row.get("survey_question_french"),
+                          "passage_complete": group.get("passage_complete", False),
                           "pdf_page_index": row.get("pdf_page_index")})
     for i, requirement in enumerate(plan["requirements"], 1):
         key, codes = f"r{i}", requirement["question_codes"]

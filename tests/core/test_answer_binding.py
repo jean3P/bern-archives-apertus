@@ -30,6 +30,8 @@ def test_positive_field_binding_and_original_quote_translation():
     value = ab.normalize(raw, binding, included, ab.schedule_requirements("Which place and district?", binding))
     assert value["claims"][1]["citations"][0] == {
         "record_id": "stapfer:answer:902", "quote": "District Foxtrot."}
+    assert binding["units"]["r2"]["citation_spans"][0]["survey_question"] == "District"
+    assert binding["units"]["r2"]["citation_spans"][0]["passage_complete"] is True
 
 
 @pytest.mark.parametrize("mutation", ["cross_field", "missing_detail", "extra_detail", "empty_quote", "hidden_answer", "echo"])
