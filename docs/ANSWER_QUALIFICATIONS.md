@@ -6,6 +6,13 @@ one incorrect under the unchanged family rubric and one uncertain historical-wor
 human review distinct from software checks; references, held-out evaluation and document audit
 still require their own review. The original default and UI remain unchanged.
 
+Two subsequent correction attempts were rejected. Stronger subject/original-term instructions
+completed20 questions but reduced assistant-satisfactory results from18 to16. Two additional
+parent-context/source-parenthetical probes still selected the wrong population or falsely said
+the requested term was unspecified after repair. Both remaining defects are therefore open.
+Runtime and tests have been restored exactly to version6.1; rejected commits and raw results
+remain in history. Do not rerun the failed prompts or count schema validation as semantic repair.
+
 Version6.1 of `--pipeline apertus-qualified` uses the original answer fields: status, claims and
 message, with text/citations per claim. Its decoder requires message to be empty for answered
 results, so substantive answer content cannot be placed in that uncited field. Insufficient-
