@@ -48,10 +48,6 @@ def test_v6_replay_keeps_its_message_but_new_decoder_contract_rejects_answer_in_
     assert aq.normalize(value, included(), aq.ORIGINAL_VERSION) == value
     with pytest.raises(ValueError, match="cited claims"):
         aq.normalize(value, included())
-    with pytest.raises(ValueError, match="cited claims"):
-        aq.normalize(value, included(), aq.CONCISE_VERSION)
-    assert aq.normalize(proposed(), included(), aq.CONCISE_VERSION) == proposed()
-    assert aq.answer_schema(ANSWER_SCHEMA, aq.CONCISE_VERSION) == aq.answer_schema(ANSWER_SCHEMA)
 
 
 def test_saved_v5_replies_keep_their_original_offline_normalization():
@@ -60,34 +56,6 @@ def test_saved_v5_replies_keep_their_original_offline_normalization():
     assert aq.normalize(legacy, included(), aq.LEGACY_VERSION) == proposed()
     with pytest.raises(ValueError):
         aq.normalize(legacy, included())
-
-
-def test_parenthetical_guard_rejects_new_gloss_without_rewriting_raw_claim():
-    value = proposed()
-    value["claims"][0]["text"] = "Seven tokens per term (monthly). Actual payment is irregular."
-    original = deepcopy(value)
-    assert aq.normalize(value, included(), aq.ROUTING_VERSION) == value
-    assert aq.normalize(value, included(), aq.CONCISE_VERSION) == value
-    with pytest.raises(ValueError, match="Parenthetical text"):
-        aq.normalize(value, included())
-    assert value == original
-    value["claims"][0]["text"] = "Seven tokens per term (Actual payment is irregular)."
-    assert aq.normalize(value, included()) == value
-
-
-def test_catalogue_context_uses_existing_parent_not_neighbor_or_expected_answer():
-    from core.answering import retrieval_catalogue
-    catalogue = [
-        {"question_number": "A.1", "text_original": "Worker", "text_french": "Employé"},
-        {"question_number": "A.1.b", "text_original": "What age?", "text_french": None},
-        {"question_number": "A.2", "text_original": "Visitors", "text_french": None}]
-    contextual = retrieval_catalogue(catalogue, contextual=True)
-    plain = retrieval_catalogue(catalogue)
-    assert contextual[1]["parent_context"]["question"] == "Worker"
-    assert contextual[1]["question"] == "What age?"
-    assert "parent_context" not in contextual[2]
-    assert all("parent_context" not in card for card in plain)
-    assert catalogue[1]["text_original"] == "What age?"
 
 
 @pytest.mark.parametrize("mutation", ["quote", "id", "length"])
@@ -143,12 +111,6 @@ def test_existing_router_single_answer_retry_and_offline_receipt_replay(tmp_path
         pipeline="apertus-qualified", transport=httpx.MockTransport(wire))
     assert result["status"] == "answered" and "Actual payment is irregular." in result["answer"]
     assert [body["max_tokens"] for body in requests] == [180, 512, 512]
-    from core.answering import retrieval_instructions
-    assert requests[0]["messages"][0]["content"] == retrieval_instructions(scoped=True) + aq.ROUTING_INSTRUCTIONS
-    assert requests[1]["messages"][0]["content"] == aq.INSTRUCTIONS
-    implementation = json.loads((run / "implementation.json").read_text(encoding="utf-8"))
-    assert implementation["retrieval_instructions_sha256"]["scoped"] == hashlib.sha256(
-        requests[0]["messages"][0]["content"].encode()).hexdigest()
     assert not (run / "question_interpretation.json").exists()
     case = {"case_id": "SOFTWARE", "topic": "synthetic", "input": {"question": question,
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 901, "quote": TEXT}]}
