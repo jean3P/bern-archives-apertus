@@ -1,5 +1,11 @@
 # Concise evidence answers
 
+**Frozen development candidate, not a validated release.** The completed version6.1 comparison
+processes 20/20 questions with 23 requests and no retries. Separate assistant review finds 18 satisfactory,
+one incorrect under the unchanged family rubric and one uncertain historical-word gloss. Keep
+human review distinct from software checks; references, held-out evaluation and document audit
+still require their own review. The original default and UI remain unchanged.
+
 Version6.1 of `--pipeline apertus-qualified` uses the original answer fields: status, claims and
 message, with text/citations per claim. Its decoder requires message to be empty for answered
 results, so substantive answer content cannot be placed in that uncited field. Insufficient-
@@ -11,7 +17,7 @@ This candidate replaces the answer instructions with a shorter direct-answer pro
 for all requested details and genuine exceptions, original wording even when unfamiliar, exact
 quotations covering each claim, no metadata in prose, and transcription-scoped attribution.
 No extra interpretation stage, model call, repair allowance or answer substitution is added.
-The original retrieval, source validator, formatter and512-token answer limit remain unchanged.
+The original retrieval, source validator, formatter and 512-token answer limit remain unchanged.
 The default `apertus` pipeline remains separate and unchanged.
 
 Only focused checks are needed, not the entire test suite:
@@ -20,7 +26,8 @@ Only focused checks are needed, not the entire test suite:
 uv run --locked pytest -q tests/core/test_answer_qualifications.py
 ```
 
-A development comparison requires a new output directory and makes real model requests:
+The following comparison has already completed. Do not rerun into its existing output directory.
+Any separately authorized future comparison needs a deliberately chosen new path:
 
 ```bash
 uv run --locked python -m core.evaluate_cli run \
