@@ -66,7 +66,7 @@ git pull --ff-only
 # Jean:
 git switch -c jean/backend
 # Dyane uses a separate clone and instead runs:
-git switch -c sister/ui
+git switch -c jeni/ui
 ```
 
 Each person runs only their own branch command. Do not rerun `switch -c` if the branch already exists; switch to it instead. Jean works in backend/configuration files, Dyane in UI/user-guide files. Commit only your assigned paths, not `git add .` over someone else's work. If the UI needs a contract/dependency change, agree it and let Jean make that change. Integrate early through a reviewed change; never resolve a conflict by discarding the other person's files.
