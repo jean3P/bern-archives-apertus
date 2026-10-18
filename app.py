@@ -155,8 +155,8 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
 
     mode = gr.Radio(choices=["live", "demo"], value="live", label="Mode")
     question = gr.Textbox(label="Your question")
-    transcription_id = gr.Number(
-        label="Transcription ID (optional)", value=None, precision=None,
+    transcription_id = gr.Textbox(
+        label="Transcription ID (optional)", value="", placeholder="e.g. 16, or leave blank",
         info="Leave blank for no transcription filter. Example: 16 for the Hörndli transcription.",
     )
     scenario = gr.Dropdown(

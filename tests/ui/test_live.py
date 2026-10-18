@@ -23,8 +23,8 @@ def live_response(scenario="answered"):
 
 
 def test_optional_transcription_component_starts_blank():
-    assert app.transcription_id.value is None
-    assert app.transcription_id.get_config()["value"] is None
+    assert app.transcription_id.value == ""
+    assert app.transcription_id.get_config()["value"] == ""
     assert app.transcription_id.preprocess(None) is None
 
 
@@ -40,12 +40,20 @@ def test_live_passes_actual_question_and_normalized_scope(monkeypatch):
     assert "Hörndli" in text and "stapfer:answer:41" in source
 
 
-def test_live_blank_scope_is_none_and_does_not_reuse_a_previous_id(monkeypatch):
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_live_blank_scope_is_none_and_does_not_reuse_a_previous_id(monkeypatch, blank):
     calls = []
     monkeypatch.setattr(app.service, "answer_question", lambda question, scope: calls.append(scope) or live_response())
     app.on_ask("q", 16, mode="live")
-    app.on_ask("q", None, mode="live")
+    app.on_ask("q", blank, mode="live")
     assert calls == [16, None]
+
+
+def test_transcription_text_field_passes_whole_id_as_integer(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app.service, "answer_question", lambda question, scope: calls.append(scope) or live_response())
+    app.on_ask("q", app.transcription_id.preprocess(" 16 "), mode="live")
+    assert calls == [16]
 
 
 @pytest.mark.parametrize("value", [-1, 0, 16.5, True, "16.5", "bad", float("nan"), float("inf")])
@@ -116,11 +124,11 @@ def test_mode_change_and_request_start_clear_visible_results():
     assert banner == app.LIVE_BANNER and status.value == "Working…" and not text and not source
 
 
-def test_number_component_does_not_round_fractional_scope_before_validation(monkeypatch):
+def test_component_does_not_round_fractional_scope_before_validation(monkeypatch):
     calls = []
     monkeypatch.setattr(app.service, "answer_question", lambda *args: calls.append(args))
-    supplied = app.transcription_id.preprocess(16.5)
-    assert supplied == 16.5
+    supplied = app.transcription_id.preprocess("16.5")
+    assert supplied == "16.5"
     _, status, text, source = app.on_ask("q", supplied, mode="live")
     assert not calls and "Error" in status.value and not text and not source
 
