@@ -5,8 +5,8 @@ import json
 
 import gradio as gr
 
-from ui.review_records import (DECISIONS, NOT_COUNTED, ReviewError, RunLoadError, load_case_file,
-                               load_references, load_run, make_review)
+from ui.review_records import (DECISIONS, NOT_COUNTED, ReviewError, RunLoadError, export_session,
+                               load_case_file, load_references, load_run, make_review)
 
 
 BANNER = "## SAVED RUN REVIEW — recorded development results, not a fresh LIVE answer"
@@ -322,6 +322,21 @@ def on_save_review(run, reviews, choice, case_id, reviewer, decision, supported,
     return reviews, case_table(run, reviews, choice), review_progress(run, reviews, choice), message
 
 
+def on_export(run, reviews):
+    """Save all reviews (scorer file) and suggestions (separate file) to a new export folder."""
+    if run is None:
+        return '<p class="load-error">Load a run before exporting.</p>'
+    try:
+        session = export_session(run, reviews)
+    except (RunLoadError, ValueError, OSError) as exc:
+        return f'<p class="load-error">Not exported: {esc(exc)}</p>'
+    reviewed = sum(1 for review in reviews.values() if review.get("decision") is not None)
+    suggestions = sum(1 for review in reviews.values() if review.get("suggestion"))
+    return (f'<p class="review-ok">Exported to {esc(session)}<br>'
+            f"Reviewed {reviewed} of {len(run['cases'])} cases ({len(run['cases']) - reviewed} pending); "
+            f"{suggestions} human suggestion(s). The saved run was not changed.</p>")
+
+
 def build_app(default_run: str = "") -> gr.Blocks:
     with gr.Blocks(title="Saved run review", analytics_enabled=False) as review:
         gr.Markdown("# Stapfer saved run review")
@@ -365,6 +380,10 @@ def build_app(default_run: str = "") -> gr.Blocks:
         save_button = gr.Button("Save review (in memory)", variant="primary")
         review_message = gr.HTML()
 
+        gr.Markdown("### Export")
+        export_button = gr.Button("Export reviews and suggestions to a new folder")
+        export_message = gr.HTML()
+
         panels = [question_panel, evidence_panel, reference_panel]
         form = [decision, supported, notes, suggestion, review_message]
         technical = [timeline, artifact_view]
@@ -381,6 +400,7 @@ def build_app(default_run: str = "") -> gr.Blocks:
                           [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
                            notes, suggestion],
                           [reviews, cases, filter_info, review_message])
+        export_button.click(on_export, [run_state, reviews], export_message)
         filter_choice.change(on_filter, [run_state, reviews, filter_choice], [cases, filter_info])
         cases.select(on_table_select, None, case_id)
         previous_button.click(on_previous, [run_state, reviews, filter_choice, case_id], case_id)

@@ -1,21 +1,27 @@
 """Read-only loading of saved J4 development runs for human review (S5)."""
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
-from core.evaluation_records import child_file, read_json, read_jsonl, verify_directory
-
-from core.evaluation_records import read_json, read_jsonl, verify_directory
+from core.evaluation_records import (child_file, create_output, digest, read_json, read_jsonl,
+                                     verify_directory, write_json, write_jsonl)
+from core.evaluation_scoring import load_reviews
 
 
 class RunLoadError(ValueError):
     """A saved run could not be opened safely; the message is shown to the user."""
+
 
 CASE_FILES = {
     "input.json", "response.json", "retrieved_sources.json", "evidence.json",
     "validated_claims.json", "summary.json", "events.jsonl",
 }
 SAFE_CASE_ID = re.compile(r"[A-Za-z0-9_-]+")
+EXPORT_ROOT = Path(__file__).resolve().parent.parent / "runs" / "review-exports"
+REVIEW_FILE = "reviews.jsonl"
+CORRECTIONS_FILE = "suggested-corrections.json"
 
 
 DECISIONS = {"Pending": None, "Correct": "correct", "Incorrect": "incorrect", "Uncertain": "uncertain"}
@@ -81,3 +87,54 @@ def make_review(case: dict, reviewer, decision_label, supported_label, notes, su
 
     return {"reviewer": reviewer or None, "decision": decision, "supported_claims": supported,
             "notes": notes or "", "suggestion": suggestion}
+
+
+def scorer_reviews(run: dict, reviews: dict) -> list:
+    """One record per case in run order, with exactly the scorer's six fields; Pending is null."""
+    records = []
+    for case in run["cases"]:
+        review = reviews.get(case["case_id"], {})
+        records.append({
+            "case_id": case["case_id"],
+            "review_binding": case["review_binding"],
+            "reviewer": review.get("reviewer"),
+            "decision": review.get("decision"),
+            "supported_claims": review.get("supported_claims"),
+            "notes": review.get("notes", ""),
+        })
+    return records
+
+
+def suggested_corrections(run: dict, reviews: dict, seal_sha256: str) -> dict:
+    """Human suggestions kept apart from scoring and from the model output."""
+    by_id = {case["case_id"]: case for case in run["cases"]}
+    return {
+        "label": "Human suggestion, not generated output",
+        "run": run["directory"].name,
+        "run_seal_sha256": seal_sha256,
+        "corrections": [
+            {"case_id": case_id, "review_binding": by_id[case_id]["review_binding"],
+             "reviewer": review["reviewer"], "suggested_answer": review["suggestion"],
+             "notes": review.get("notes", "")}
+            for case_id, review in reviews.items() if review.get("suggestion")
+        ],
+    }
+
+
+def export_session(run: dict, reviews: dict, export_root=EXPORT_ROOT) -> Path:
+    """Write the reviews and suggestions to a new folder outside the run; never overwrite anything."""
+    try:
+        verify_directory(run["directory"])
+    except ValueError as exc:
+        raise RunLoadError(f"Run changed or incomplete, so the review cannot be exported: {exc}") from exc
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    session = Path(export_root) / f'{run["directory"].name}-{stamp}-{uuid4().hex[:8]}'
+    try:
+        create_output(session, protected=[run["directory"]])
+    except (OSError, ValueError) as exc:
+        raise RunLoadError(f"Cannot create the export folder: {exc}") from exc
+    write_jsonl(session / REVIEW_FILE, scorer_reviews(run, reviews))
+    load_reviews(session / REVIEW_FILE, run["cases"])
+    seal_sha256 = digest(run["directory"] / "_COMPLETE.json")
+    write_json(session / CORRECTIONS_FILE, suggested_corrections(run, reviews, seal_sha256))
+    return session
