@@ -32,7 +32,7 @@ def test_positive_field_binding_and_original_quote_translation():
         "record_id": "stapfer:answer:902", "quote": "District Foxtrot."}
 
 
-@pytest.mark.parametrize("mutation", ["cross_field", "missing_detail", "extra_detail", "empty_quote", "hidden_answer"])
+@pytest.mark.parametrize("mutation", ["cross_field", "missing_detail", "extra_detail", "empty_quote", "hidden_answer", "echo"])
 def test_bad_binding_and_incomplete_structure_are_rejected(mutation):
     _, included, _, binding, raw = fixture()
     if mutation == "cross_field":
@@ -43,8 +43,10 @@ def test_bad_binding_and_incomplete_structure_are_rejected(mutation):
         raw["answers"]["extra"] = raw["answers"]["r1"]
     elif mutation == "empty_quote":
         binding["units"]["r2"]["citation_spans"][0]["quote"] = "not the source"
-    else:
+    elif mutation == "hidden_answer":
         raw["message"] = "The actual answer was hidden here."
+    else:
+        raw["answers"]["r1"]["text"] = binding["units"]["r1"]["detail"]
     with pytest.raises(ValueError):
         ab.normalize(raw, binding, included, ab.schedule_requirements("What place?", binding))
 

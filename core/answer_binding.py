@@ -198,6 +198,8 @@ def normalize(raw, binding, included, requirements):
         answer = raw["answers"][key]
         if not isinstance(answer, dict) or set(answer) != {"text", "citations"}:
             raise ValueError("Each detail needs text and citations")
+        if isinstance(answer["text"], str) and er.tokens(answer["text"]) == er.tokens(unit["detail"]):
+            raise ValueError("An answer must not merely repeat its requested detail")
         if not isinstance(answer["citations"], list) or not answer["citations"]:
             raise ValueError("Each detail needs field-bound evidence")
         bank = {span["span_id"]: span for span in unit["citation_spans"]}
