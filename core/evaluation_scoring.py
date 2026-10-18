@@ -45,7 +45,7 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
     events = read_jsonl(directory / "events.jsonl") if "events.jsonl" in receipt_hashes else []
     requests = [event for event in events if event.get("event") == "generation_request"]
     calls, repairs = summary.get("generation_posts_attempted"), summary.get("format_retries")
-    if pipeline not in ("apertus", "apertus-facets", "qwen-apertus"):
+    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
         raise ValueError("Unknown inspection pipeline")
     cap = 4 if pipeline == "qwen-apertus" else 3
     budget_valid = (not attempted or (type(calls) is int and 0 <= calls <= cap and calls == len(requests)
@@ -87,6 +87,8 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
         protocol_valid = protocol_valid and hybrid_receipts_valid(saved, events, delivered=delivered)
     if attempted and pipeline == "apertus-facets" and status != "error":
         protocol_valid = protocol_valid and parts_receipts_valid(saved, events, delivered=delivered)
+    if attempted and pipeline == "apertus-qualified":
+        protocol_valid = protocol_valid and qualifications_receipts_valid(saved, events, delivered)
     claims = saved("validated_claims.json", None)
     citation_valid = None
     if status == "answered":
@@ -145,6 +147,46 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
         "definitive_failure": definitive_failure,
         "review_binding": value_hash({"case": case, "receipts": receipt_hashes,
                                      "response": response, "attempted": attempted})}
+
+
+def qualifications_receipts_valid(saved, events, delivered):
+    from core import answer_qualifications as aq
+    implementation = saved("implementation.json", {})
+    if (implementation.get("version") != aq.VERSION or implementation.get("model") != aq.MODEL
+            or saved("input.json", {}).get("pipeline") != "apertus-qualified"
+            or saved("summary.json", {}).get("pipeline") != "apertus-qualified"):
+        return False
+    pending, answers = None, []
+    for event in events:
+        if event.get("event") == "generation_request":
+            stage, body = event.get("stage"), event.get("request", {})
+            limit = {"retrieval_plan": 180, "cited_answer": 512}.get(stage)
+            if pending is not None or limit is None or body.get("model") != aq.MODEL or body.get("max_tokens") != limit:
+                return False
+            pending = stage
+        elif event.get("event") == "generation_response":
+            if event.get("stage") != pending or event.get("http_status") != 200:
+                return False
+            wire = strict_loads(event["body"])
+            if wire.get("model") != aq.MODEL or len(wire.get("choices", [])) != 1:
+                return False
+            if wire["choices"][0].get("finish_reason") != "stop":
+                return False
+            if pending == "cited_answer":
+                answers.append(wire["choices"][0]["message"]["content"])
+            pending = None
+        elif event.get("event") == "generation_transport_error":
+            if saved("summary.json", {}).get("status") != "error" or event.get("stage") != pending:
+                return False
+            pending = None
+    if pending is not None:
+        return False
+    if saved("summary.json", {}).get("status") == "error":
+        return True
+    if not delivered:
+        return not answers
+    raw = strict_loads(answers[-1])
+    return raw == saved("qualification_answer.json", None) and aq.normalize(raw, delivered) == saved("validated_claims.json", None)
 
 
 def parts_receipts_valid(saved, events, delivered):

@@ -86,8 +86,8 @@ def save_scores(output, records, document_template, *, reviews=None, document_re
 def run_evaluation(references, split, data_dir, out, *, allow_draft=False, reviewed_by=None,
                    _answerer=None, _dataset_verifier=None, pipeline="apertus"):
     """Test-only adapters are explicitly labelled software_fixture, never actual inference."""
-    if pipeline not in ("apertus", "apertus-facets", "qwen-apertus"):
-        raise ValueError("Choose apertus, apertus-facets or qwen-apertus")
+    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
+        raise ValueError("Choose apertus, apertus-qualified, apertus-facets or qwen-apertus")
     max_posts = 4 if pipeline == "qwen-apertus" else 3
     bundle = load_bundle(references, split)
     if allow_draft and reviewed_by is not None:
@@ -140,7 +140,7 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
             manifest["settings"]["question_evidence_model"] = {"model": qwen_config.model,
                 "base_url": qwen_config.base_url, "timeout": qwen_config.timeout}
         write_json(output / "run-manifest.json", manifest)
-        if config and pipeline == "apertus-facets":
+        if config and pipeline in ("apertus-qualified", "apertus-facets"):
             from core.apertus import ApertusClient
             from core.facet_answering import MODEL
             if config.model != MODEL:
@@ -165,7 +165,7 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
                 try:
                     request = dict(case["input"])
                     options = {}
-                    if pipeline in ("apertus-facets", "qwen-apertus"):
+                    if pipeline in ("apertus-qualified", "apertus-facets", "qwen-apertus"):
                         options["pipeline"] = pipeline
                         if config and pipeline == "qwen-apertus":
                             options["qwen_config"] = qwen_config
@@ -214,7 +214,7 @@ def score_evaluation(run, out, *, reviews=None, document_reviews=None):
     from core.evaluation_records import read_json
     manifest = read_json(run / "run-manifest.json")
     pipeline = manifest.get("pipeline", "apertus")
-    if pipeline not in ("apertus", "apertus-facets", "qwen-apertus"):
+    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
         raise ValueError("Unknown acquired pipeline")
     expected_cap = 4 if pipeline == "qwen-apertus" else 3
     if manifest["max_posts_per_case"] != expected_cap or manifest["max_validation_retries_per_case"] != 1:

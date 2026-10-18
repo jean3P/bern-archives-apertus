@@ -223,8 +223,9 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                config=None, transport=None, rewrite=True, pipeline="apertus",
                qwen_config=None, qwen_transport=None):
     """Explicitly run one request. All real/model-fixture results get separate logs."""
-    if pipeline not in ("apertus", "apertus-facets", "qwen-apertus"):
-        raise ValueError("Choose apertus, apertus-facets or qwen-apertus")
+    if pipeline not in ("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"):
+        raise ValueError("Choose apertus, apertus-qualified, apertus-facets or qwen-apertus")
+    qualified = pipeline == "apertus-qualified"
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"
     structured = hybrid or per_part
@@ -253,6 +254,10 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     modules = [Path(__file__), Path(__file__).with_name("evidence.py"),
                Path(__file__).with_name("apertus.py"), Path(__file__).with_name("search.py"),
                ROOT / "contracts.py"]
+    if qualified:
+        from core import answer_qualifications as aq
+        modules.append(Path(aq.__file__))
+    answer_instruction = ANSWER_INSTRUCTIONS + aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
     if hybrid:
         from core import question_evidence as qe
         modules.extend([Path(qe.__file__), Path(__file__).with_name("config.py")])
@@ -260,16 +265,19 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         from core import facet_answering as fa
         from core import question_evidence as qe
         modules.extend([Path(fa.__file__), Path(qe.__file__)])
-    log.write("implementation.json", {"version": (fa.VERSION if per_part else
+    log.write("implementation.json", {"version": (aq.VERSION if qualified else fa.VERSION if per_part else
         qe.HYBRID_VERSION if hybrid else "cited-answer-v2-question-coverage"),
         "source_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in modules},
-        "answer_instructions_sha256": hashlib.sha256(ANSWER_INSTRUCTIONS.encode()).hexdigest(),
+        "answer_instructions_sha256": hashlib.sha256(answer_instruction.encode()).hexdigest(),
         "retrieval_instructions_sha256": {
             mode: hashlib.sha256(retrieval_instructions(scoped=scoped).encode()).hexdigest()
             for mode, scoped in (("scoped", True), ("global", False))},
         "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
         "mechanical_citation_checks_only": True,
+        **({"pipeline": pipeline, "qualification_field": "string_appended_to_same_claim",
+            "max_generation_posts": 3, "max_shared_validation_retries": 1,
+            "answer_token_limit": 512, "model": aq.MODEL} if qualified else {}),
         **({"pipeline": pipeline, "max_generation_posts": 3, "max_shared_validation_retries": 1,
             "stage_models": {stage: fa.MODEL for stage in fa.TOKENS}, "stage_token_limits": fa.TOKENS,
             "facet_prompt_sha256": {"interpretation": hashlib.sha256(fa.INTERPRET_INSTRUCTIONS.encode()).hexdigest(),
@@ -285,6 +293,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         nonlocal client
         if client is None:
             selected = config or settings()
+            if qualified and selected.model != aq.MODEL:
+                raise ValueError("Qualification candidate requires Apertus8B")
             if structured and selected.model != qe.APERTUS_MODEL:
                 raise ValueError("Structured generation requires the configured Apertus8B model")
             client = ApertusClient(selected, transport=transport)
@@ -331,6 +341,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             raise ValueError("Use a nonempty question of at most 2000 characters")
         if transcription_id is not None and (type(transcription_id) is not int or transcription_id < 1):
             raise ValueError("transcription_id must be a positive integer")
+        if qualified and (config or settings()).model != aq.MODEL:
+            raise ValueError("Qualification candidate requires Apertus8B; no generation request was made")
         if structured and (config or settings()).model != qe.APERTUS_MODEL:
             raise ValueError("Structured generation requires Apertus8B; no generation request was made")
         store = EvidenceStore(directory)
@@ -425,11 +437,13 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             payload = {"question": question, "transcription_id": transcription_id,
                        "evidence": packet, "evidence_is_not_a_complete_census": True}
             for attempt in range(2):
-                messages = [{"role": "system", "content": ANSWER_INSTRUCTIONS},
+                messages = [{"role": "system", "content": answer_instruction},
                             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-                content = call_model(get_client(), messages, ANSWER_SCHEMA, "cited_answer", 512, log)
+                schema = aq.answer_schema(ANSWER_SCHEMA) if qualified else ANSWER_SCHEMA
+                content = call_model(get_client(), messages, schema, "cited_answer", 512, log)
                 try:
-                    value = validate_answer(strict_json(content), included)
+                    raw = strict_json(content)
+                    value = aq.normalize(raw, included) if qualified else validate_answer(raw, included)
                 except ValueError as error:
                     log.record({"event": "answer_validation_failed", "attempt": attempt + 1,
                                 "reason": str(error), "raw_content": content})
@@ -438,6 +452,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                     repairs += 1
                     payload["format_feedback"] = str(error)
                     continue
+                if qualified:
+                    log.write("qualification_answer.json", raw)
                 log.write("validated_claims.json", value)
                 result = format_answer(value, included)
                 break

@@ -15,7 +15,7 @@ def main():
     run.add_argument("--split", choices=("development", "evaluation"), required=True)
     run.add_argument("--data-dir", type=Path, required=True)
     run.add_argument("--out", type=Path, required=True)
-    run.add_argument("--pipeline", choices=("apertus", "apertus-facets", "qwen-apertus"), default="apertus",
+    run.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "apertus-facets", "qwen-apertus"), default="apertus",
                      help="Baseline/parts use at most three POSTs; hybrid at most four; each has one retry")
     review = run.add_mutually_exclusive_group()
     review.add_argument("--allow-draft-references", action="store_true", help="Diagnostic only, not human-approved gold")
