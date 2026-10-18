@@ -26,8 +26,8 @@ def selected():
 
 def answer():
     return {"status": "answered", "message": "", "claims": [
-        {"requirement_id": "r1", "text": "Thirty-nine years.", "spans": ["s1"]},
-        {"requirement_id": "r2", "text": "Three family children.", "spans": ["s2"]}]}
+        {"text": "Thirty-nine years.", "citations": [{"span_id": "s1"}]},
+        {"text": "Three family children.", "citations": [{"span_id": "s2"}]}]}
 
 
 def test_software_copies_original_quote_and_cannot_accept_generated_quote():
@@ -40,21 +40,23 @@ def test_software_copies_original_quote_and_cannot_accept_generated_quote():
         ac.normalize(answer(), plan(), mutated, included)
 
 
-@pytest.mark.parametrize("mutation", ["missing", "extra", "unknown_span", "unsupported_citation", "hidden_qualifier"])
-def test_incomplete_or_invalid_per_detail_outputs_rejected(mutation):
+@pytest.mark.parametrize("mutation", ["empty", "extra_field", "unknown_span", "unsupported_citation", "hidden_qualifier", "echo"])
+def test_invalid_or_question_echo_outputs_rejected(mutation):
     spans, included = selected()
     raw = answer()
-    if mutation == "missing":
-        raw["claims"].pop()
-    elif mutation == "extra":
-        raw["claims"].append(raw["claims"][0])
+    if mutation == "empty":
+        raw["claims"] = []
+    elif mutation == "extra_field":
+        raw["claims"][0]["unexpected"] = True
     elif mutation == "unknown_span":
-        raw["claims"][1]["spans"] = ["not_delivered"]
+        raw["claims"][1]["citations"] = [{"span_id": "not_delivered"}]
     elif mutation == "unsupported_citation":
         raw["status"] = "insufficient_evidence"
         raw["message"] = "Missing detail"
-    else:
+    elif mutation == "hidden_qualifier":
         raw["message"] = "Qualification outside answer"
+    else:
+        raw["claims"][0]["text"] = plan()["requirements"][0]["label"]
     with pytest.raises(ValueError):
         ac.normalize(raw, plan(), spans, included)
 
@@ -77,8 +79,8 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
     data = make_data(tmp_path)
     raw = answer()
     bad = deepcopy(raw)
-    bad["claims"][1]["spans"] = []
-    replies, requests = iter([{"r1": ["III.11.d"], "r2": ["III.11.e"]}, bad, raw]), []
+    bad["claims"][1]["citations"] = []
+    replies, requests = iter([{"r1": ["III.11.d"], "r2": []}, bad, raw]), []
     def wire(request):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": Settings().model}]})
@@ -92,6 +94,8 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
     assert response["status"] == "answered" and "Three family" in response["answer"]
     assert [body["max_tokens"] for body in requests] == [ac.PLAN_TOKENS, ac.ANSWER_TOKENS, ac.ANSWER_TOKENS]
     assert json.loads((out / "coverage_answer.json").read_text()) == raw
+    assert json.loads((out / "coverage_related_fields.json").read_text())["added_catalogue_codes"] == ["III.11.e"]
+    assert json.loads((out / "coverage_route.json").read_text())["r2"] == []
     case = {"case_id": "SYNTHETIC", "topic": "synthetic", "input": {"question": question,
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 905,
         "quote": "Three family children."}]}
@@ -121,8 +125,8 @@ def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     data = make_data(tmp_path)
     from core.entity_retrieval import INSTRUCTIONS
     replies = iter([{"entities": [], "question_codes": ["I.1.d"]},
-        {"status": "answered", "message": "", "claims": [{"requirement_id": "r1",
-            "text": "The district is Foxtrot.", "spans": ["s2"]}]}])
+        {"status": "answered", "message": "", "claims": [{
+            "text": "The district is Foxtrot.", "citations": [{"span_id": "s2"}]}]}])
     requests = []
     def wire(request):
         if request.url.path.endswith("/models"):

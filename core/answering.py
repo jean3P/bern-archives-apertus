@@ -473,7 +473,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                        "evidence": packet, "evidence_is_not_a_complete_census": True}
             if coverage:
                 spans = ac.span_bank(packet)
-                payload.update(requirements=coverage_plan["requirements"], citation_spans=spans)
+                payload.update(requested_details=[item["label"] for item in coverage_plan["requirements"]], citation_spans=spans)
             for attempt in range(2):
                 messages = [{"role": "system", "content": ac.ANSWER_INSTRUCTIONS if coverage else answer_instruction},
                             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
