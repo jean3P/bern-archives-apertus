@@ -123,13 +123,17 @@ def test_entity_plan_preserves_question_names_and_rejects_guessed_ids_and_codes(
             er.validate_plan(value, "Which district contains Testville?", CATALOGUE)
 
 
-def test_live_interface_uses_same_answer_prompt_and_one_shared_answer_retry(tmp_path):
+@pytest.mark.parametrize("model_omits_names", [False, True])
+def test_live_interface_uses_same_answer_prompt_and_one_shared_answer_retry(tmp_path, model_omits_names):
     directory = make_data(tmp_path)
     good = {"status": "answered", "message": "", "claims": [{"text": "The district is Foxtrot.",
         "citations": [{"record_id": "stapfer:answer:902", "quote": "District Foxtrot."}]}]}
     bad = deepcopy(good)
     bad["claims"][0]["citations"][0]["quote"] = "Not an original quote"
-    replies, requests = iter([plan(), bad, good]), []
+    proposed = plan()
+    if model_omits_names:
+        proposed["entities"] = []
+    replies, requests = iter([proposed, bad, good]), []
     def wire(request):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": Settings().model}]})
@@ -144,6 +148,10 @@ def test_live_interface_uses_same_answer_prompt_and_one_shared_answer_retry(tmp_
     assert result["status"] == "answered" and "Foxtrot" in result["answer"]
     assert "unresolved" in result["message"]  # Multiple-school attribution warning survives.
     assert [body["max_tokens"] for body in requests] == [180, 512, 512]
+    raw = json.loads((out / "retrieval_plan.json").read_text())
+    receipt = json.loads((out / "entity_selection.json").read_text())
+    assert raw["entities"] == proposed["entities"]  # Never rewrite the model prediction.
+    assert receipt["anchor_source"] == ("software_literal_name_matching" if model_omits_names else "model_copied_names")
     from core.answer_qualifications import INSTRUCTIONS
     assert requests[1]["messages"][0]["content"] == INSTRUCTIONS
     case = {"case_id": "SOFTWARE", "topic": "synthetic", "input": {"question": question,
@@ -153,6 +161,20 @@ def test_live_interface_uses_same_answer_prompt_and_one_shared_answer_retry(tmp_
         {"alternatives": []}, "software_fixture", pipeline="apertus-qualified")
     assert inspected["protocol_valid"] and inspected["mechanical_citation_valid"]
     assert inspected["format_retries"] == 1 and inspected["generation_posts_attempted"] == 3
+
+
+def test_literal_fallback_uses_maximal_named_spans_not_neighbours_or_generic_attributes(tmp_path):
+    directory = make_data(tmp_path)
+    store = EvidenceStore(directory)
+    try:
+        linked = er.literal_anchors("What is Ada Example's age at Testville?", store, CATALOGUE)
+        assert linked["usable"]
+        assert linked["entities"] == [{"text": "Ada Example", "kind": "person"},
+                                      {"text": "Testville", "kind": "place"}]
+        assert er.literal_anchors("What is the district of the school?", store, CATALOGUE)["entities"] == []
+        assert er.literal_anchors("What is the district at Missingville?", store, CATALOGUE)["entities"] == []
+    finally:
+        store.close()
 
 
 def test_explicit_scoped_request_and_unscoped_scope_hold_keep_original_behavior(tmp_path):

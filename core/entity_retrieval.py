@@ -9,7 +9,8 @@ import unicodedata
 from core.evidence import explicit_codes, make_packet
 from core.search import source_card
 
-VERSION = "entity-scope-v1"
+LEGACY_VERSION = "entity-scope-v1"
+VERSION = "entity-scope-v2-literal-name-fallback"
 MAX_CANDIDATES = 5
 ANCHOR_CODES = {"place": ("I.1", "I.1.a"), "person": ("III.11.b",)}
 INSTRUCTIONS = """Prepare retrieval, not an historical answer. Return entities and question_codes.
@@ -75,6 +76,59 @@ def validate_plan(value, question, catalogue):
             raise ValueError("Duplicate entity anchor")
         seen.add(key)
     return value
+
+
+def literal_anchors(question, store, catalogue):
+    """Source-grounded lexical fallback, not invented model entities or aliases.
+
+    Find maximal query spans in primary identity fields. Attribute/function words
+    cannot identify a subject by themselves. Ambiguous names still pass through
+    the ordinary unique-intersection gate; they never select a convenient ID.
+    """
+    stop = set(tokens("""a an the and or of in on at to for from with by as is are was were be
+        what which who whose where when why how many much old age name named naming called
+        place person school teacher district canton survey account response report reports
+        according using only exact date birth day month year number children child family
+        pupil pupils student students describe describing belong belongs assigned does do
+        this that these those its his her their schoolhouse classroom fee fees pay payment"""))
+    for row in catalogue:
+        stop.update(tokens((row["text_original"] or "") + " " + (row["text_french"] or "")))
+    words = list(re.finditer(r"[^\W_]+", question, re.UNICODE))
+    candidates = []
+    for start in range(len(words)):
+        for end in range(start + 1, min(start + 8, len(words)) + 1):
+            first, last = words[start], words[end - 1]
+            if (not first.group().isalpha() or not last.group().isalpha()
+                    or tokens(first.group())[0] in stop or tokens(last.group())[0] in stop):
+                continue
+            text = question[first.start():last.end()]
+            if 2 <= len(text) <= 100:
+                candidates.append((first.start(), last.end(), text, " " + " ".join(tokens(text)) + " "))
+    found = []
+    for kind, codes in ANCHOR_CODES.items():
+        query = ("SELECT a.payload FROM answers a JOIN questions q ON q.id=a.question_id WHERE q.code IN ("
+                 + ",".join("?" for _ in codes) + ") ORDER BY a.id")
+        rows = [json.loads(row[0]) for row in store.connection.execute(query, codes)]
+        normalized = [(row["record_id"], " " + " ".join(tokens(row["text_original"])) + " ")
+                      for row in rows if isinstance(row["text_original"], str)]
+        for start, end, text, term in candidates:
+            matches = [identity for identity, passage in normalized if term in passage]
+            if matches:
+                found.append({"start": start, "end": end, "entity": {"text": text, "kind": kind},
+                              "witness_record_ids": matches})
+    maximal = [item for item in found if not any(
+        other["start"] <= item["start"] and other["end"] >= item["end"]
+        and (other["start"], other["end"]) != (item["start"], item["end"])
+        for other in found)]
+    maximal.sort(key=lambda item: (item["start"], item["end"], item["entity"]["kind"]))
+    overlapping = any(left["start"] < right["end"] and right["start"] < left["end"]
+                      for i, left in enumerate(maximal) for right in maximal[i + 1:])
+    usable = 1 <= len(maximal) <= 2 and not overlapping
+    return {"method": "maximal_literal_query_spans_in_primary_identity_answers",
+        "model_entity_output_is_not_rewritten": True,
+        "candidates": maximal[:20], "candidate_count": len(maximal),
+        "usable": usable, "entities": [item["entity"] for item in maximal] if usable else [],
+        "ambiguous_or_excessive_spans": bool(maximal) and not usable}
 
 
 def select_related(plan, store, catalogue):
@@ -165,7 +219,19 @@ def retrieve(question, transcription_id, catalogue, directory, store, get_client
     plan = validate_plan(strict_json(call_model(get_client(), messages, schema(catalogue),
                                                 "retrieval_plan", 180, log)), question, catalogue)
     log.write("retrieval_plan.json", plan)
-    cards, reason, receipt = select_related(plan, store, catalogue)
+    effective = plan
+    linking = None
+    if not plan["entities"]:
+        linking = literal_anchors(question, store, catalogue)
+        effective = validate_plan({"entities": linking["entities"],
+                                   "question_codes": plan["question_codes"]}, question, catalogue)
+    log.write("effective_entity_plan.json", effective)
+    cards, reason, receipt = select_related(effective, store, catalogue)
+    receipt.update(anchor_source="software_literal_name_matching" if linking else "model_copied_names",
+                   raw_model_entities=plan["entities"], literal_linking=linking)
+    if linking is not None and not linking["usable"]:
+        reason = "No unambiguous literal identity anchor was found under this policy; specify a transcription or clarify the name."
+        receipt["reason"] = reason
     log.write("entity_selection.json", receipt)
     log.record({"event": "entity_retrieval", "version": VERSION, "status": receipt["status"],
         "selected_transcription_id": receipt["selected_transcription_id"],
@@ -179,8 +245,8 @@ def receipts_valid(saved, events):
     request = saved("input.json", {})
     implementation = saved("implementation.json", {})
     receipt = saved("entity_selection.json", {})
-    if (implementation.get("retrieval_version") != VERSION
-            or receipt.get("version") != VERSION):
+    version = implementation.get("retrieval_version")
+    if version not in (VERSION, LEGACY_VERSION) or receipt.get("version") != version:
         return False
     if receipt.get("status") == "standard_scope":
         return (receipt.get("selected_transcription_id") == request.get("transcription_id")
@@ -191,8 +257,20 @@ def receipts_valid(saved, events):
              and event.get("stage") == "retrieval_plan"]
     replies = [event for event in events if event.get("event") == "generation_response"
                and event.get("stage") == "retrieval_plan"]
-    if len(calls) != 1 or len(replies) != 1 or receipt.get("plan") != plan:
+    effective = plan if version == LEGACY_VERSION else validate_plan(
+        saved("effective_entity_plan.json", {}), request["question"], catalogue)
+    if len(calls) != 1 or len(replies) != 1 or receipt.get("plan") != effective:
         return False
+    if version == VERSION:
+        if effective["question_codes"] != plan["question_codes"] or receipt.get("raw_model_entities") != plan["entities"]:
+            return False
+        if plan["entities"] and effective != plan:
+            return False
+        if not plan["entities"]:
+            linking = receipt.get("literal_linking") or {}
+            if (receipt.get("anchor_source") != "software_literal_name_matching"
+                    or linking.get("entities") != effective["entities"]):
+                return False
     body = calls[0]["request"]
     if (body["messages"][0] != {"role": "system", "content": INSTRUCTIONS}
             or body["response_format"]["json_schema"]["schema"] != schema(catalogue)
@@ -214,7 +292,7 @@ def receipts_valid(saved, events):
     by_id = {card["record_id"]: card for card in cards}
     if receipt["candidate_transcription_ids"] != [selected]:
         return False
-    for witness, entity in zip(receipt["entity_witnesses"], plan["entities"], strict=True):
+    for witness, entity in zip(receipt["entity_witnesses"], effective["entities"], strict=True):
         if witness["entity"] != entity or not any(
                 row["transcription_id"] == selected and row["record_id"] in by_id
                 and source_card(row) == by_id[row["record_id"]]
