@@ -130,6 +130,14 @@ def test_teacher_family_field_is_not_confused_with_fathers_financing_the_school(
     assert ac.teacher_family_fields(catalogue) == ["III.11.e"]
 
 
+def test_exact_calendar_date_gate_does_not_turn_age_into_birthdate():
+    proposed = {"requirements": [{"answer_type": "exact_date"}]}
+    assert ac.date_type_hold(proposed, [{"passage": "The teacher is 39 years old."}])
+    for text in ["Born 12 June 1760.", "Geboren 12. März 1760.", "Né le 12 juin 1760.", "12.06.1760"]:
+        assert ac.date_type_hold(proposed, [{"passage": text}]) is None
+    assert ac.date_type_hold({"requirements": [{"answer_type": "fact"}]}, [{"passage": "Age 39."}]) is None
+
+
 def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     data = make_data(tmp_path)
     from core.entity_retrieval import INSTRUCTIONS

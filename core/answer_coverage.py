@@ -11,7 +11,7 @@ from core import entity_retrieval as er
 from core import answer_qualifications as aq
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "requested-details-v7-focused-answers"
+VERSION = "requested-details-v8-focused-context-and-date-gate"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 768
 PLAN_INSTRUCTIONS = """Select catalogue fields for each supplied literal question unit.
@@ -243,10 +243,27 @@ def normalize(raw, plan, spans, included):
 
 
 def focused_payload(question, transcription_id, requirement, packet, spans):
-    return {"question": requirement["label"], "original_question": question,
+    return {"question": requirement["label"],
         "current_detail": requirement, "transcription_id": transcription_id,
-        "task": "Answer ONLY the current question detail. Use the original question for subject, shared qualifiers and requested format; do not merely repeat a question.",
+        "shared_constraints": question.split("?", 1)[1].strip() if "?" in question else "",
+        "task": "Answer ONLY the current detail. If it names a population, report the supplied passage's facts for that population, with amounts, frequencies, periods and exceptions. Do not substitute a different population or attribute. Do not repeat a question.",
         "evidence": packet, "citation_spans": spans, "evidence_is_not_a_complete_census": True}
+
+
+def date_type_hold(plan, packet):
+    if not any(item["answer_type"] == "exact_date" for item in plan["requirements"]):
+        return None
+    months = ("january|february|march|april|may|june|july|august|september|october|november|december|"
+              "janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre|"
+              "januar|februar|marz|juni|juli|oktober|dezember")
+    dated = re.compile(r"\b(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-]\d{4}\b|"
+        r"\b\d{4}[./-](?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|[12]\d|3[01])\b|"
+        r"\b\d{1,2}(?:st|nd|rd|th|er)?\.?\s+(?:" + months + r")\s+\d{4}\b", re.I)
+    if any(dated.search(" ".join(er.tokens(group["passage"]))) or dated.search(group["passage"])
+           for group in packet):
+        return None
+    return {"reason": "no_recognized_complete_calendar_date", "recognizer_is_not_a_birthdate_entailment_test": True,
+        "message": "No complete calendar date was recognized in the supplied evidence. An age alone cannot establish the requested day, month and year of birth."}
 
 
 def combine_parts(parts, included):
@@ -261,6 +278,10 @@ def combine_parts(parts, included):
 def answer_parts(question, transcription_id, plan, packet, included, get_client, log):
     from core.answering import call_model, strict_json
     spans, parts = span_bank(packet), []
+    gate = date_type_hold(plan, packet)
+    if gate:
+        log.write("coverage_type_gate.json", gate)
+        return validate_answer({"status": "insufficient_evidence", "claims": [], "message": gate["message"]}, included)
     # Reserve the hard three-POST total, including routing. No hidden per-part
     # repair allowances; the one retry is shared by the entire instruction.
     if log.calls + len(plan["requirements"]) > log.max_posts:
@@ -353,6 +374,11 @@ def receipts_valid(saved, events, included):
     if not included:
         return not answers
     packet = saved("evidence.json", {})["packet"]
+    gate = date_type_hold(plan, packet)
+    if gate:
+        return (not answers and saved("coverage_type_gate.json", None) == gate
+                and saved("validated_claims.json", None) == {
+                    "status": "insufficient_evidence", "claims": [], "message": gate["message"]})
     spans = span_bank(packet)
     parts = saved("coverage_answer.json", {}).get("parts", [])
     if len(parts) != len(plan["requirements"]) or not answers:
