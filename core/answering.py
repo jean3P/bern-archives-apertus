@@ -167,7 +167,7 @@ def retrieval_instructions(*, scoped):
 
 
 def retrieve(question, transcription_id, catalogue, directory, get_client, log, rewrite=True,
-             prepared_plan=None):
+             prepared_plan=None, route_guidance=""):
     cards, seen = [], set()
 
     def add(query, code=None):
@@ -199,7 +199,7 @@ def retrieve(question, transcription_id, catalogue, directory, get_client, log, 
                 "french": (row["text_french"] or "")[:80]} for row in catalogue]
     scoped = transcription_id is not None
     if prepared_plan is None:
-        messages = [{"role": "system", "content": retrieval_instructions(scoped=scoped)},
+        messages = [{"role": "system", "content": retrieval_instructions(scoped=scoped) + route_guidance},
             {"role": "user", "content": json.dumps({"question": question,
                 "transcription_id": transcription_id, "catalogue": summary}, ensure_ascii=False)}]
         plan = validate_plan(strict_json(call_model(get_client(), messages, retrieval_schema(catalogue, scoped=scoped),
@@ -258,6 +258,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         from core import answer_qualifications as aq
         modules.append(Path(aq.__file__))
     answer_instruction = aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
+    route_guidance = aq.ROUTING_INSTRUCTIONS if qualified else ""
     if hybrid:
         from core import question_evidence as qe
         modules.extend([Path(qe.__file__), Path(__file__).with_name("config.py")])
@@ -270,7 +271,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         "source_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in modules},
         "answer_instructions_sha256": hashlib.sha256(answer_instruction.encode()).hexdigest(),
         "retrieval_instructions_sha256": {
-            mode: hashlib.sha256(retrieval_instructions(scoped=scoped).encode()).hexdigest()
+            mode: hashlib.sha256((retrieval_instructions(scoped=scoped) + route_guidance).encode()).hexdigest()
             for mode, scoped in (("scoped", True), ("global", False))},
         "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
@@ -387,7 +388,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             cards, reason = [], "No applicable catalogue route or keyword hypothesis was identified; archive absence is not established."
         else:
             cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log, rewrite,
-                                     prepared_plan=prepared_plan)
+                                     prepared_plan=prepared_plan, route_guidance=route_guidance)
         timings["retrieval_seconds"] = time.perf_counter() - started
         log.write("retrieved_sources.json", cards)
         packet, included, omitted = make_packet(store.records(cards), catalogue)

@@ -48,6 +48,10 @@ def test_v6_replay_keeps_its_message_but_new_decoder_contract_rejects_answer_in_
     assert aq.normalize(value, included(), aq.ORIGINAL_VERSION) == value
     with pytest.raises(ValueError, match="cited claims"):
         aq.normalize(value, included())
+    with pytest.raises(ValueError, match="cited claims"):
+        aq.normalize(value, included(), aq.CONCISE_VERSION)
+    assert aq.normalize(proposed(), included(), aq.CONCISE_VERSION) == proposed()
+    assert aq.answer_schema(ANSWER_SCHEMA, aq.CONCISE_VERSION) == aq.answer_schema(ANSWER_SCHEMA)
 
 
 def test_saved_v5_replies_keep_their_original_offline_normalization():
@@ -111,6 +115,12 @@ def test_existing_router_single_answer_retry_and_offline_receipt_replay(tmp_path
         pipeline="apertus-qualified", transport=httpx.MockTransport(wire))
     assert result["status"] == "answered" and "Actual payment is irregular." in result["answer"]
     assert [body["max_tokens"] for body in requests] == [180, 512, 512]
+    from core.answering import retrieval_instructions
+    assert requests[0]["messages"][0]["content"] == retrieval_instructions(scoped=True) + aq.ROUTING_INSTRUCTIONS
+    assert requests[1]["messages"][0]["content"] == aq.INSTRUCTIONS
+    implementation = json.loads((run / "implementation.json").read_text(encoding="utf-8"))
+    assert implementation["retrieval_instructions_sha256"]["scoped"] == hashlib.sha256(
+        requests[0]["messages"][0]["content"].encode()).hexdigest()
     assert not (run / "question_interpretation.json").exists()
     case = {"case_id": "SOFTWARE", "topic": "synthetic", "input": {"question": question,
         "transcription_id": 101}, "expected_status": "answered", "evidence": [{"answer_id": 901, "quote": TEXT}]}
