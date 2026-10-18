@@ -25,8 +25,9 @@ def selected():
 
 
 def answer():
-    return {"r1": {"supported": True, "answer": "Thirty-nine years.", "spans": ["s1"], "reason": ""},
-            "r2": {"supported": True, "answer": "Three family children.", "spans": ["s2"], "reason": ""}}
+    return {"status": "answered", "message": "", "claims": [
+        {"requirement_id": "r1", "text": "Thirty-nine years.", "spans": ["s1"]},
+        {"requirement_id": "r2", "text": "Three family children.", "spans": ["s2"]}]}
 
 
 def test_software_copies_original_quote_and_cannot_accept_generated_quote():
@@ -44,15 +45,16 @@ def test_incomplete_or_invalid_per_detail_outputs_rejected(mutation):
     spans, included = selected()
     raw = answer()
     if mutation == "missing":
-        del raw["r2"]
+        raw["claims"].pop()
     elif mutation == "extra":
-        raw["r3"] = raw["r1"]
+        raw["claims"].append(raw["claims"][0])
     elif mutation == "unknown_span":
-        raw["r2"]["spans"] = ["not_delivered"]
+        raw["claims"][1]["spans"] = ["not_delivered"]
     elif mutation == "unsupported_citation":
-        raw["r2"].update(supported=False, reason="Missing detail")
+        raw["status"] = "insufficient_evidence"
+        raw["message"] = "Missing detail"
     else:
-        raw["r1"]["reason"] = "Qualification outside answer"
+        raw["message"] = "Qualification outside answer"
     with pytest.raises(ValueError):
         ac.normalize(raw, plan(), spans, included)
 
@@ -60,10 +62,10 @@ def test_incomplete_or_invalid_per_detail_outputs_rejected(mutation):
 def test_one_missing_required_attribute_abstains_without_erasing_raw_supported_rows():
     spans, included = selected()
     raw = answer()
-    raw["r2"] = {"supported": False, "answer": "", "spans": [], "reason": "Family detail is unsupported."}
+    raw = {"status": "insufficient_evidence", "claims": [], "message": "Family detail is unsupported."}
     value = ac.normalize(raw, plan(), spans, included)
     assert value["status"] == "insufficient_evidence" and not value["claims"]
-    assert raw["r1"]["answer"] == "Thirty-nine years."
+    assert value["message"] == "Family detail is unsupported."
 
 
 def test_explicit_scope_cannot_be_expanded_to_find_an_unrequested_attribute():
@@ -75,7 +77,7 @@ def test_controller_receipts_exact_translation_and_single_shared_retry(tmp_path)
     data = make_data(tmp_path)
     raw = answer()
     bad = deepcopy(raw)
-    bad["r2"]["spans"] = []
+    bad["claims"][1]["spans"] = []
     replies, requests = iter([{"r1": ["III.11.d"], "r2": ["III.11.e"]}, bad, raw]), []
     def wire(request):
         if request.url.path.endswith("/models"):
@@ -119,7 +121,8 @@ def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     data = make_data(tmp_path)
     from core.entity_retrieval import INSTRUCTIONS
     replies = iter([{"entities": [], "question_codes": ["I.1.d"]},
-        {"r1": {"supported": True, "answer": "The district is Foxtrot.", "spans": ["s2"], "reason": ""}}])
+        {"status": "answered", "message": "", "claims": [{"requirement_id": "r1",
+            "text": "The district is Foxtrot.", "spans": ["s2"]}]}])
     requests = []
     def wire(request):
         if request.url.path.endswith("/models"):
