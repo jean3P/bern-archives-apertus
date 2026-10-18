@@ -223,11 +223,13 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                config=None, transport=None, rewrite=True, pipeline="apertus",
                qwen_config=None, qwen_transport=None):
     """Explicitly run one request. All real/model-fixture results get separate logs."""
-    if pipeline not in ("apertus", "qwen-apertus"):
-        raise ValueError("Choose apertus or qwen-apertus")
+    if pipeline not in ("apertus", "apertus-facets", "qwen-apertus"):
+        raise ValueError("Choose apertus, apertus-facets or qwen-apertus")
     hybrid = pipeline == "qwen-apertus"
-    if hybrid and not rewrite:
-        raise ValueError("The hybrid requires question interpretation; literal-only mode is separate")
+    per_part = pipeline == "apertus-facets"
+    structured = hybrid or per_part
+    if structured and not rewrite:
+        raise ValueError("Structured answering requires question interpretation; literal-only mode is separate")
     if not hybrid and (qwen_config is not None or qwen_transport is not None):
         raise ValueError("Qwen options require the explicit qwen-apertus pipeline")
     if hybrid and qwen_transport is not None and transport is None:
@@ -254,15 +256,24 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if hybrid:
         from core import question_evidence as qe
         modules.extend([Path(qe.__file__), Path(__file__).with_name("config.py")])
-    log.write("implementation.json", {"version": qe.HYBRID_VERSION if hybrid else "cited-answer-v2-question-coverage",
+    if per_part:
+        from core import facet_answering as fa
+        from core import question_evidence as qe
+        modules.extend([Path(fa.__file__), Path(qe.__file__)])
+    log.write("implementation.json", {"version": (fa.VERSION if per_part else
+        qe.HYBRID_VERSION if hybrid else "cited-answer-v2-question-coverage"),
         "source_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in modules},
         "answer_instructions_sha256": hashlib.sha256(ANSWER_INSTRUCTIONS.encode()).hexdigest(),
         "retrieval_instructions_sha256": {
             mode: hashlib.sha256(retrieval_instructions(scoped=scoped).encode()).hexdigest()
             for mode, scoped in (("scoped", True), ("global", False))},
-        "natural_question_routing": ("question_facet_interpretation_before_retrieval" if hybrid else
+        "natural_question_routing": ("question_facet_interpretation_before_retrieval" if structured else
                                      "one_coverage_route_before_retrieval_literal_fallback_only"),
         "mechanical_citation_checks_only": True,
+        **({"pipeline": pipeline, "max_generation_posts": 3, "max_shared_validation_retries": 1,
+            "stage_models": {stage: fa.MODEL for stage in fa.TOKENS}, "stage_token_limits": fa.TOKENS,
+            "facet_prompt_sha256": {"interpretation": hashlib.sha256(fa.INTERPRET_INSTRUCTIONS.encode()).hexdigest(),
+                                    "answer": hashlib.sha256(fa.ANSWER_INSTRUCTIONS.encode()).hexdigest()}} if per_part else {}),
         **({"pipeline": pipeline, "max_generation_posts": 4, "max_shared_validation_retries": 1,
             "stage_models": qe.STAGE_MODELS, "stage_token_limits": qe.STAGE_TOKENS,
             "hybrid_prompt_sha256": {name: hashlib.sha256(prompt.encode()).hexdigest() for name, prompt in
@@ -274,8 +285,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         nonlocal client
         if client is None:
             selected = config or settings()
-            if hybrid and selected.model != qe.APERTUS_MODEL:
-                raise ValueError("Hybrid final generation requires the configured Apertus8B model")
+            if structured and selected.model != qe.APERTUS_MODEL:
+                raise ValueError("Structured generation requires the configured Apertus8B model")
             client = ApertusClient(selected, transport=transport)
             log.write("serving.json", {"base_url": selected.base_url, "model": selected.model,
                 "timeout": selected.timeout, "temperature": 0, "api_key_logged": False,
@@ -301,13 +312,14 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         while True:
             messages = [{"role": "system", "content": instruction},
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-            content = call_model(role_client(), messages, schema, stage, qe.STAGE_TOKENS[stage], log)
+            tokens = fa.TOKENS[stage] if per_part else qe.STAGE_TOKENS[stage]
+            content = call_model(role_client(), messages, schema, stage, tokens, log)
             try:
                 value = strict_json(content)
                 validate(value)
                 return value
             except ValueError as error:
-                log.record({"event": "hybrid_validation_failed", "stage": stage,
+                log.record({"event": "part_validation_failed" if per_part else "hybrid_validation_failed", "stage": stage,
                             "reason": str(error), "raw_content": content})
                 if log.repairs >= 1:
                     raise
@@ -319,8 +331,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             raise ValueError("Use a nonempty question of at most 2000 characters")
         if transcription_id is not None and (type(transcription_id) is not int or transcription_id < 1):
             raise ValueError("transcription_id must be a positive integer")
-        if hybrid and (config or settings()).model != qe.APERTUS_MODEL:
-            raise ValueError("Hybrid final generation requires Apertus8B; no Qwen request was made")
+        if structured and (config or settings()).model != qe.APERTUS_MODEL:
+            raise ValueError("Structured generation requires Apertus8B; no generation request was made")
         store = EvidenceStore(directory)
         completion = json.loads((directory / "_SUCCESS.json").read_text(encoding="utf-8"))
         manifest_bytes = (directory / "source_manifest.json").read_bytes()
@@ -331,7 +343,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                                    "search_index_sha256": completion["artifact_sha256"]["search.sqlite3"]})
         catalogue = store.catalogue()
         prepared_plan = None
-        if hybrid:
+        if structured:
             started = time.perf_counter()
             explicit = explicit_codes(question, catalogue)
             if explicit and transcription_id is None:
@@ -340,7 +352,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             catalogue_view = [{"code": row["question_number"],
                 "question": (row["text_original"] or "")[:130],
                 "french": (row["text_french"] or "")[:80]} for row in catalogue]
-            interpretation = hybrid_stage(get_qwen_client, "question_interpretation", qe.INTERPRET_INSTRUCTIONS,
+            interpretation = hybrid_stage(get_client if per_part else get_qwen_client, "question_interpretation",
+                fa.INTERPRET_INSTRUCTIONS if per_part else qe.INTERPRET_INSTRUCTIONS,
                 {"question": question, "transcription_id": transcription_id,
                  "explicit_question_codes": explicit, "catalogue": catalogue_view},
                 qe.interpretation_schema(catalogue, transcription_id is not None),
@@ -354,7 +367,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
                     prepared_plan = None
             timings["interpretation_seconds"] = time.perf_counter() - started
         started = time.perf_counter()
-        if hybrid and prepared_plan is None:
+        if structured and prepared_plan is None:
             cards, reason = [], "No applicable catalogue route or keyword hypothesis was identified; archive absence is not established."
         else:
             cards, reason = retrieve(question, transcription_id, catalogue, directory, get_client, log, rewrite,
@@ -370,6 +383,18 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
             result = {"mode": "live", "status": "insufficient_evidence", "answer": None,
                       "sources": [], "message": reason or
                       "No useful passages were retrieved within this search scope and budget; this does not establish absence from the archive."}
+        elif per_part:
+            started = time.perf_counter()
+            parts = hybrid_stage(get_client, "cited_answer", fa.ANSWER_INSTRUCTIONS,
+                {"question": question, "transcription_id": transcription_id, "facets": facets,
+                 "interpretation_ambiguity": interpretation["ambiguity"], "evidence": packet,
+                 "evidence_is_not_a_complete_census": True},
+                fa.answer_schema(facets, included), lambda value: fa.validate_parts(value, interpretation, included))
+            log.write("part_answers.json", parts)
+            normalized = fa.validate_parts(parts, interpretation, included)
+            log.write("validated_claims.json", normalized)
+            result = format_answer(normalized, included)
+            timings["answer_seconds"] = time.perf_counter() - started
         elif hybrid:
             started = time.perf_counter()
             extraction = hybrid_stage(get_qwen_client, "evidence_extraction", qe.EXTRACT_INSTRUCTIONS,
@@ -429,7 +454,7 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     timings["total_seconds"] = time.perf_counter() - tick
     log.write("response.json", result)
     log.write("summary.json", {"status": result["status"], "transport": authority,
-        "generation_posts_attempted": log.calls, "format_retries": log.repairs if hybrid else repairs,
+        "generation_posts_attempted": log.calls, "format_retries": log.repairs if structured else repairs,
         "pipeline": pipeline,
         "packet_sha256": packet_hash, "timing_seconds": timings,
         "semantic_support_independently_verified": False, "source_dataset_modified": False})
