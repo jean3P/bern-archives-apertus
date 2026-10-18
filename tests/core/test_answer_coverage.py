@@ -121,6 +121,14 @@ def test_literal_units_do_not_invent_tasks_and_preserve_exact_date_format():
     assert len(ac.literal_requirements("According to II.5, which five skills precede the memorisation list?")) == 1
 
 
+def test_teacher_family_field_is_not_confused_with_fathers_financing_the_school():
+    catalogue = deepcopy(CATALOGUE) + [
+        {"question_number": "III.11", "text_original": "Schullehrer.", "text_french": "Instituteurs."},
+        {"question_number": "IV.16.B.f", "text_original": "Zusammengelegte Gelder",
+         "text_french": "Argent des pères de famille."}]
+    assert ac.teacher_family_fields(catalogue) == ["III.11.e"]
+
+
 def test_global_entity_request_is_frozen_and_receipts_replay(tmp_path):
     data = make_data(tmp_path)
     from core.entity_retrieval import INSTRUCTIONS

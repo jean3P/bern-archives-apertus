@@ -11,7 +11,7 @@ from core import entity_retrieval as er
 from core import answer_qualifications as aq
 from core.evidence import explicit_codes, validate_answer
 
-VERSION = "requested-details-v5-concise-source-selection"
+VERSION = "requested-details-v6-parent-scoped-family"
 PLAN_TOKENS = 384
 ANSWER_TOKENS = 768
 PLAN_INSTRUCTIONS = """Select catalogue fields for each supplied literal question unit.
@@ -57,7 +57,24 @@ The requested_details checklist contains pieces of the QUESTION, not proposed an
 Write the actual historical answer in text, NEVER copy a checklist question as the answer.
 Check every requested detail, including details after commas and conjunctions, before returning.
 An age does not provide an exact birth date. If asked for day, month and year but only age
-is supplied, return insufficient_evidence. A selected quote does not itself answer a question."""
+is supplied, return insufficient_evidence. For recurring charges state both the frequency
+and the season or whole-period coverage. A season alone does not give a weekly frequency.
+Do not put editorial marker codes in claim text; keep them only in the selected original
+quotation. A selected quote does not itself answer a question."""
+
+
+def teacher_family_fields(catalogue):
+    by_code = {row["question_number"]: row for row in catalogue}
+    found = []
+    for row in catalogue:
+        text = " ".join(er.tokens((row["text_original"] or "") + " " + (row["text_french"] or "")))
+        parent = by_code.get(row["question_number"].rsplit(".", 1)[0], {})
+        context = " ".join(er.tokens((parent.get("text_original") or "") + " "
+                                      + (parent.get("text_french") or ""))) + " " + text
+        if (re.search(r"\b(?:family|familie|famille)\b", text)
+                and re.search(r"\b(?:teachers?|schullehrer|instituteurs?)\b", context)):
+            found.append(row["question_number"])
+    return found
 
 
 def plan_schema(catalogue, requirements):
@@ -147,9 +164,7 @@ def prepare(question, transcription_id, catalogue, directory, store, get_client,
     teacher_request = bool(re.search(r"\b(?:teacher|maitre|instituteur|schullehrer)\b", folded))
     additions = []
     if not explicit and family_request and teacher_request:
-        families = [row["question_number"] for row in catalogue if re.search(
-            r"\b(?:family|familie|famille)\b", " ".join(er.tokens(
-                (row["text_original"] or "") + " " + (row["text_french"] or ""))))]
+        families = teacher_family_fields(catalogue)
         if len(families) == 1 and families[0] not in codes:
             additions = families
             codes += additions
