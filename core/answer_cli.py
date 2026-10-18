@@ -15,10 +15,12 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--out", type=Path, help="New run directory; existing paths are never overwritten")
     parser.add_argument("--no-query-rewrite", action="store_true", help="Diagnostic literal/explicit-code retrieval only")
+    parser.add_argument("--pipeline", choices=("apertus", "qwen-apertus"), default="apertus",
+                        help="Opt-in Qwen32B interpretation/extraction with Apertus8B final generation")
     args = parser.parse_args()
     try:
         result, directory = run_answer(args.question, args.transcription_id,
-            data_dir=args.data_dir, out=args.out, rewrite=not args.no_query_rewrite)
+            data_dir=args.data_dir, out=args.out, rewrite=not args.no_query_rewrite, pipeline=args.pipeline)
     except (OSError, ValueError) as error:
         parser.exit(1, "Cannot create the answer run (" + type(error).__name__ + "). Use a fresh --out path.\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -84,8 +84,11 @@ def save_scores(output, records, document_template, *, reviews=None, document_re
 
 
 def run_evaluation(references, split, data_dir, out, *, allow_draft=False, reviewed_by=None,
-                   _answerer=None, _dataset_verifier=None):
+                   _answerer=None, _dataset_verifier=None, pipeline="apertus"):
     """Test-only adapters are explicitly labelled software_fixture, never actual inference."""
+    if pipeline not in ("apertus", "qwen-apertus"):
+        raise ValueError("Choose apertus or qwen-apertus")
+    max_posts = 4 if pipeline == "qwen-apertus" else 3
     bundle = load_bundle(references, split)
     if allow_draft and reviewed_by is not None:
         raise ValueError("Choose a draft diagnostic or an explicit reference-review attestation")
@@ -111,6 +114,9 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
             from core.config import settings
             from core.dataset_cli import verify
             answerer, verifier, config = run_answer, verify, settings()
+            if pipeline == "qwen-apertus":
+                from core.config import qwen_settings
+                qwen_config = qwen_settings()
         else:
             answerer, verifier, config = _answerer, _dataset_verifier, None
         verification_started = time.perf_counter()
@@ -124,15 +130,19 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
             "reference_manifest_sha256": bundle["manifest_sha256"],
             "dataset_completion_sha256": digest(data_dir / "_SUCCESS.json"),
             "scheduled_case_ids": [case["case_id"] for case in bundle["cases"]],
-            "max_generation_posts": 3 * len(bundle["cases"]), "max_posts_per_case": 3,
+            "pipeline": pipeline,
+            "max_generation_posts": max_posts * len(bundle["cases"]), "max_posts_per_case": max_posts,
             "max_validation_retries_per_case": 1, "runtime_fields": ["question", "transcription_id"],
             "dataset_verification_seconds": verification_seconds,
             "settings": {"model": config.model, "base_url": config.base_url, "timeout": config.timeout,
                          "temperature": 0, "query_rewrite": True} if config else {"software_fixture": True}}
+        if pipeline == "qwen-apertus" and config:
+            manifest["settings"]["question_evidence_model"] = {"model": qwen_config.model,
+                "base_url": qwen_config.base_url, "timeout": qwen_config.timeout}
         write_json(output / "run-manifest.json", manifest)
         (output / "cases").mkdir()
         records, observations, stop = [], [], None
-        # No outer inference retry or repair. Each call uses the unchanged J3 bounds.
+        # No outer retry: the selected backend owns its declared shared repair allowance.
         for case in bundle["cases"]:
             directory = output / "cases" / case["case_id"]
             observation = {"case_id": case["case_id"], "attempted": stop is None,
@@ -141,8 +151,13 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
                 started = time.perf_counter()
                 try:
                     request = dict(case["input"])
+                    options = {}
+                    if pipeline == "qwen-apertus":
+                        options["pipeline"] = pipeline
+                        if config:
+                            options["qwen_config"] = qwen_config
                     response, returned = answerer(request["question"], request["transcription_id"],
-                        data_dir=data_dir, out=directory, config=config)
+                        data_dir=data_dir, out=directory, config=config, **options)
                     if Path(returned).resolve() != directory.resolve():
                         raise ValueError("Backend returned another case's run directory")
                     observation["response"] = response
@@ -150,7 +165,7 @@ def run_evaluation(references, split, data_dir, out, *, allow_draft=False, revie
                     stop = "backend_exception_" + type(error).__name__
                     observation["reason"] = stop
                 observation["wrapper_seconds"] = time.perf_counter() - started
-            record = inspect_case(case, directory, observation, bundle["aliases"], authority)
+            record = inspect_case(case, directory, observation, bundle["aliases"], authority, pipeline=pipeline)
             if observation["attempted"] and not record["protocol_valid"]:
                 stop = stop or "receipt_or_budget_guard"
             records.append(record)
@@ -185,6 +200,12 @@ def score_evaluation(run, out, *, reviews=None, document_reviews=None):
     verify_directory(run)
     from core.evaluation_records import read_json
     manifest = read_json(run / "run-manifest.json")
+    pipeline = manifest.get("pipeline", "apertus")
+    if pipeline not in ("apertus", "qwen-apertus"):
+        raise ValueError("Unknown acquired pipeline")
+    expected_cap = 4 if pipeline == "qwen-apertus" else 3
+    if manifest["max_posts_per_case"] != expected_cap or manifest["max_validation_retries_per_case"] != 1:
+        raise ValueError("Acquired pipeline budget differs from its declared policy")
     bundle = load_bundle(run / "references", manifest["split"])
     if bundle["manifest_sha256"] != manifest["reference_manifest_sha256"]:
         raise ValueError("Original run's reference binding differs")
@@ -192,7 +213,8 @@ def score_evaluation(run, out, *, reviews=None, document_reviews=None):
     if [row["case_id"] for row in observations] != manifest["scheduled_case_ids"] or manifest["scheduled_case_ids"] != [row["case_id"] for row in bundle["cases"]]:
         raise ValueError("Scheduled cases changed or disappeared")
     records = [inspect_case(case, run / "cases" / case["case_id"], observation,
-               bundle["aliases"], manifest["authority"]) for case, observation in zip(bundle["cases"], observations)]
+               bundle["aliases"], manifest["authority"], pipeline=pipeline)
+               for case, observation in zip(bundle["cases"], observations)]
     document_template = read_jsonl(run / "document-review-template.jsonl")
     # Validate human files before reserving an output directory.
     load_reviews(reviews, records)

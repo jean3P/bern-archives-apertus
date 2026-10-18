@@ -39,3 +39,14 @@ def settings() -> Settings:
         timeout=float(os.getenv("BERN_APERTUS_TIMEOUT", "120")),
         api_key=os.getenv("BERN_APERTUS_API_KEY") or None,
     )
+
+
+def qwen_settings() -> Settings:
+    """Separate opt-in endpoint; never reuse the Apertus key or change its defaults."""
+    load_dotenv(ROOT / ".env", override=False)
+    return Settings(
+        base_url=os.getenv("BERN_QWEN_BASE_URL", "http://127.0.0.1:8012/v1").rstrip("/"),
+        model=os.getenv("BERN_QWEN_MODEL", "Qwen/Qwen3-VL-32B-Instruct"),
+        timeout=float(os.getenv("BERN_QWEN_TIMEOUT", "180")),
+        api_key=os.getenv("BERN_QWEN_API_KEY") or None,
+    )
