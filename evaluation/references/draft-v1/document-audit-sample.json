@@ -1,0 +1,26 @@
+{
+  "status": "sample_fixed_audit_not_performed",
+  "source_sha256": "68eba6c4a7cc13eb3e0b6239b00a6ee21e2e0996a24de69224c3915480941c97",
+  "sample_size": 100,
+  "unit": "transcription_record",
+  "selection": "Sequential disjoint strata, 20 each; within each stratum ascending SHA256 of UTF8 j4-audit-v1|source_sha256|decimal_transcription_id. French-language source dossier 1753 is reserved first in the multiple-school stratum, then the first 19 eligible ranked records. Other strata exclude all already selected IDs.",
+  "stratum_rules": {
+    "multiple_schools": "Source transkription_mehrere_schulen equals 1; no claim that every answer is owned by every linked school",
+    "null_text": "At least one source antwort field is SQL NULL",
+    "long_or_free_text": "At least one question ID is 57 or greater, or an original quoted SQL answer token exceeds 2000 bytes including quoting/escapes; not a decoded character length",
+    "editorial_markup": "At least one raw source answer token contains @ or $; a selection cue, not an assertion that all markup is understood",
+    "short_single_school": "Source multiple-school flag is not 1, no NULL text, no free-text question ID >=57, and maximum raw quoted answer-token length is below 1000 bytes; flag-based stratum, actual school links still need audit"
+  },
+  "strata": {
+    "multiple_schools": [1753,512,318,609,1614,699,2349,2377,22,1022,582,1869,946,1747,37,220,87,1526,1322,1608],
+    "null_text": [1878,2053,205,709,492,929,1434,1182,2361,1520,751,941,415,182,66,2347,40,1585,2009,430],
+    "long_or_free_text": [1053,1167,432,1999,855,2358,1772,149,831,1639,558,2293,463,403,493,2326,266,1008,2339,2525],
+    "editorial_markup": [721,666,2163,1700,2021,807,1502,1448,2001,1070,1047,1624,688,1684,134,1098,1428,1620,638,685],
+    "short_single_school": [1740,548,1486,1746,1668,1508,1655,1782,1408,876,1943,740,2143,636,907,1503,79,1757,1793,870]
+  },
+  "audit_checks": ["Complete public dossier projection and associated answers", "Exact original text and NULL/blank distinctions", "Question/transcription identity and relationship fidelity", "Source archive locator and unverified PDF page kept null", "Duplicate evidence and unresolved school assignment preserved", "Excluded contributor/editorial fields absent"],
+  "reviewed_documents": 0,
+  "correct_documents": null,
+  "structural_error_documents": null,
+  "limitations": ["Purposefully stratified development audit, not a representative random estimate of corpus correctness", "Physical manuscript transcription accuracy is outside this audit", "100 selected IDs are not 100 passing documents", "Human audit decisions are pending"]
+}
