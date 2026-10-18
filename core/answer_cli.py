@@ -15,7 +15,7 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--out", type=Path, help="New run directory; existing paths are never overwritten")
     parser.add_argument("--no-query-rewrite", action="store_true", help="Diagnostic literal/explicit-code retrieval only")
-    parser.add_argument("--retrieval-mode", choices=("standard", "entity", "coverage"), default="standard",
+    parser.add_argument("--retrieval-mode", choices=("standard", "entity", "coverage", "bound"), default="standard",
                         help="Opt-in named-subject selection followed by related-answer retrieval")
     parser.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"), default="apertus",
                         help="Baseline, concise Apertus/Qwen-only answers, rejected parts experiment, or inactive hybrid")

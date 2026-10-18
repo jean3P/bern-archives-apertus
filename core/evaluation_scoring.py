@@ -151,6 +151,11 @@ def _inspect_case(case, directory, observation, aliases, authority, *, pipeline=
 
 def qualifications_receipts_valid(saved, events, delivered, *, pipeline="apertus-qualified"):
     from core import answer_qualifications as aq
+    if saved("input.json", {}).get("retrieval_mode") == "bound":
+        from core.answer_binding import receipts_valid
+        return (pipeline in ("apertus-qualified", "qwen-only")
+                and saved("input.json", {}).get("pipeline") == pipeline
+                and receipts_valid(saved, events, delivered))
     if saved("input.json", {}).get("retrieval_mode") == "coverage":
         from core.answer_coverage import receipts_valid
         return (pipeline in ("apertus-qualified", "qwen-only")

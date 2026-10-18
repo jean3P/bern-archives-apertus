@@ -226,11 +226,11 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
     if pipeline not in ("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"):
         raise ValueError("Choose apertus, apertus-qualified, qwen-only, apertus-facets or qwen-apertus")
     qualified = pipeline in ("apertus-qualified", "qwen-only")
-    if retrieval_mode not in ("standard", "entity", "coverage"):
-        raise ValueError("Choose standard, entity or coverage retrieval")
+    if retrieval_mode not in ("standard", "entity", "coverage", "bound"):
+        raise ValueError("Choose standard, entity, coverage or bound retrieval")
     if retrieval_mode != "standard" and (not qualified or not rewrite):
         raise ValueError("Entity retrieval requires a concise cited-answer pipeline and routing")
-    coverage = retrieval_mode == "coverage"
+    coverage = retrieval_mode in ("coverage", "bound")
     hybrid = pipeline == "qwen-apertus"
     per_part = pipeline == "apertus-facets"
     structured = hybrid or per_part
@@ -268,7 +268,12 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         from core import entity_retrieval as er
         modules.append(Path(er.__file__))
     if coverage:
-        from core import answer_coverage as ac
+        if retrieval_mode == "bound":
+            from core import answer_binding as ac
+            from core import answer_coverage as legacy_coverage
+            modules.append(Path(legacy_coverage.__file__))
+        else:
+            from core import answer_coverage as ac
         from core import entity_retrieval as er
         modules.extend([Path(ac.__file__), Path(er.__file__)])
     answer_instruction = ac.ANSWER_INSTRUCTIONS if coverage else aq.INSTRUCTIONS if qualified else ANSWER_INSTRUCTIONS
@@ -293,7 +298,8 @@ def run_answer(question, transcription_id=None, *, data_dir=None, out=None,
         **({"retrieval_mode": "entity", "retrieval_version": er.VERSION,
             "entity_instructions_sha256": hashlib.sha256(er.INSTRUCTIONS.encode()).hexdigest()}
            if retrieval_mode == "entity" or (coverage and transcription_id is None) else {}),
-        **({"retrieval_mode": "coverage", "coverage_version": ac.VERSION,
+        **({"retrieval_mode": retrieval_mode, "coverage_version": ac.VERSION,
+            **({"binding_version": ac.VERSION} if retrieval_mode == "bound" else {}),
             "coverage_plan_tokens": ac.PLAN_TOKENS, "coverage_answer_tokens": ac.ANSWER_TOKENS,
             "coverage_prompt_sha256": {"plan": hashlib.sha256(ac.PLAN_INSTRUCTIONS.encode()).hexdigest(),
                 "answer": hashlib.sha256(ac.ANSWER_INSTRUCTIONS.encode()).hexdigest()},

@@ -17,7 +17,7 @@ def main():
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--pipeline", choices=("apertus", "apertus-qualified", "qwen-only", "apertus-facets", "qwen-apertus"), default="apertus",
                      help="Baseline/parts use at most three POSTs; hybrid at most four; each has one retry")
-    run.add_argument("--retrieval-mode", choices=("standard", "entity", "coverage"), default="standard")
+    run.add_argument("--retrieval-mode", choices=("standard", "entity", "coverage", "bound"), default="standard")
     review = run.add_mutually_exclusive_group()
     review.add_argument("--allow-draft-references", action="store_true", help="Diagnostic only, not human-approved gold")
     review.add_argument("--reviewed-by", help="Use only after this person reviewed this exact reference snapshot; records an attestation")
