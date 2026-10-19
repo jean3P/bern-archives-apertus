@@ -2,7 +2,7 @@
 
 `references/draft-v1/` is a byte-for-byte copy of the source-checked J4 preparation snapshot. It contains public original-text excerpts and evaluator-only facts, not acquired model answers. Human semantic approval is pending. The runner verifies the original manifest and every artifact hash before use.
 
-See [the technical guide, pages 6-7](../docs/stapfer-technical-guide.pdf#page=6) for review, scoring and the recorded results. Both models have saved development/evaluation runs and assisted human reviews; the separate document audit remains pending. Importing the evaluation modules does nothing.
+See [the technical guide, pages 2 and 6](../docs/stapfer-technical-guide.pdf#page=2) for review, scoring and the recorded results. Both models have saved development/evaluation runs and assisted human reviews; the separate document audit remains pending. Importing the evaluation modules does nothing.
 
 The frozen manifest describes the **earlier preparation state**, including the then-unimplemented runner and then-planned M1 gate. It remains unchanged for provenance, not as a statement of current implementation status. Its `benchmark_execution_authorized: false` records that preparation did not authorize execution; it is not a machine permission grant. The CLI's `run` command actually calls the backend and must be invoked intentionally. The reference answers, expected statuses and known source IDs are evaluator-only; they are never runtime model hints.
 
