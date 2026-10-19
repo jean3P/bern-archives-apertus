@@ -1,0 +1,22 @@
+# Allowlist: private settings, Git history, datasets, runs, caches and tests never enter the build context.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!app.py
+!review_app.py
+!contracts.py
+!core/
+!core/**
+!ui/
+!ui/**
+!fixtures/
+!fixtures/**
+!scripts/
+!scripts/**
+**/__pycache__/
+**/*.pyc
+**/.env*
+**/*.log

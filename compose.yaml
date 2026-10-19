@@ -1,0 +1,70 @@
+x-app: &app
+  build: .
+  image: "${BERN_UI_IMAGE:-bern-archives-ui:local}"
+  user: "${BERN_CONTAINER_UID:-1000}:${BERN_CONTAINER_GID:-1000}"
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+services:
+  live:
+    <<: *app
+    command: ["python", "app.py", "--host", "0.0.0.0", "--port", "7860"]
+    env_file: .env
+    environment:
+      BERN_DATA_DIR: /data/archive
+      BERN_APERTUS_BASE_URL: "${BERN_DOCKER_MODEL_URL:-http://host.docker.internal:8010/v1}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${BERN_LIVE_PORT:-17860}:7860"
+    volumes:
+      - type: bind
+        source: "${BERN_DATA_HOST_DIR:-./data/derived/j2-full}"
+        target: /data/archive
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/config',timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  review:
+    <<: *app
+    command: ["python", "review_app.py", "--host", "0.0.0.0", "--port", "7863", "--runs-root", "/data/saved-runs", "--allow-evaluation"]
+    env_file: .env.review-oauth
+    ports:
+      - "127.0.0.1:${BERN_REVIEW_PORT:-17863}:7863"
+    volumes:
+      - type: bind
+        source: "${BERN_SAVED_RUNS_HOST_DIR:-./runs}"
+        target: /data/saved-runs
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${BERN_ORIGINAL_REVIEWS_HOST_DIR:-./runs/review-exports}"
+        target: /app/runs/review-exports
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${BERN_ACCOUNT_REVIEWS_HOST_DIR:-./runs/reviewer-exports}"
+        target: /app/runs/reviewer-exports
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7863/config',timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6

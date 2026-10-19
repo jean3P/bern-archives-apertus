@@ -1,83 +1,250 @@
-# Bern Archives with Apertus
+# Stapfer evidence explorer
 
-An evidence-preserving pipeline and small search/answer demonstrator for the University of Bern's **Deciphering Archives with Apertus** challenge, using the edited Stapfer school-survey data.
+An Apertus-powered explorer of the **1799 Stapfer school survey**, built for the University of Bern's **Deciphering Archives with Apertus** challenge. It preserves the edited archival text and lets readers inspect the evidence behind an answer.
 
-## Status
+The application has two independent pages:
 
-J1 provides the uv project, shared response types, demo fixtures and configurable Apertus client. **J2's full user build/verify passed:** 2,250 transcriptions and 92,524 answer rows exported, 92,336 nonblank answers indexed, and a successful filtered source query. See the [dataset commands](docs/J2.md). **J3's backend baseline is closed:** the user reported 90 passing software tests, correct explicit/natural-language answers about the same location fact and an actual empty-route unsupported-question nonanswer. Earlier failures are preserved. **M1's live screen-to-evidence baseline passed:** 70 selected software tests plus fresh browser answer/nonempty-evidence abstention checks; see [M1 instructions](docs/M1.md). J4 has a recorded 20-question development run; its 30-case evaluation and independent document audit remain pending. See the [evaluation commands and review rubric](docs/J4.md). No general historical-accuracy, 80% correctness or inexpensive-hardware benchmark is claimed.
+| Page | Local address used in this guide | Purpose |
+| --- | --- | --- |
+| LIVE evidence explorer | http://127.0.0.1:17860/ | Ask a fresh question, retrieve archival evidence and generate a cited Apertus answer |
+| Saved run review | http://127.0.0.1:17863/ | Inspect recorded Apertus/Qwen answers and create separate human reviews with Hugging Face sign-in |
 
-## Quick start
+**Opening the review page never runs a model. Clicking Ask in LIVE does.** A valid citation is not proof of a correct interpretation. DEMO mode shows labelled fixtures, not model results.
 
-For the saved-answer dashboard, including separate Hugging Face reviewer accounts, see [review sign-in and testing](docs/REVIEW_SIGN_IN.md). Existing Jean/Jeni reviews remain read-only; new reviewers export separately. Saved run data and private OAuth configuration are not included in Git.
+You can run both pages with Python, or start both with Docker Compose after the one-time configuration below. Neither method installs or starts a model server automatically.
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and authenticate with an account that has access to the private repository.
+## Already configured run now
 
-```bash
-git clone https://github.com/jean3P/bern-archives-apertus.git
-cd bern-archives-apertus
-uv sync --locked
-uv run pytest -q
-```
-
-Python 3.11.16 is selected by `.python-version`. `uv.lock` fixes package versions; only Jean changes shared dependencies. The application environment is independent of the machine hosting the model. Gradio is included for the UI; model weights and PyTorch are not installed by this project. Tests and fixture-based UI development do not require a GPU or model server.
-
-For model access, copy `.env.example` to your ignored `.env` and configure your local or remote compatible server. See [portable setup](docs/SETUP.md). Actual inference requires a reachable model service with suitable computing resources; no particular cluster or GPU model is required by the client.
-
-## File ownership
-
-```text
-bern-archives-apertus/
-  core/                  Jean: configuration, data/search, model client and answer service
-  scripts/               Jean: optional model-service utilities
-  contracts.py           Jean integrates agreed UI/backend type changes
-  ui/                    Dyane98: interface-only helpers
-  app.py                 Dyane98 creates the UI entry point during S1
-  fixtures/ui/           Shared, Jean-reviewed DEMO payloads, not model replies
-  tests/core/            Jean: backend tests
-  evaluation/            Jean: versioned evaluator-only reference snapshots
-  tests/ui/              Dyane98: interface tests
-  tests/test_contracts.py Jean: shared response checks
-  docs/SETUP.md          Jean: runtime/setup instructions
-  docs/USER_GUIDE.md     Dyane98: user instructions and demonstration
-  pyproject.toml         Jean: dependencies/configuration
-  uv.lock                Jean: generated dependency lock
-  .env                   Local, ignored; never commit
-  data/                  Raw/derived files ignored except this directory's README
-  runs/                  Runtime logs/receipts ignored except its README
-```
-
-`app.py` now provides the evidence explorer with separate LIVE and DEMO modes. LIVE uses `core.service.answer_question` and requires a completed dataset plus the configured model connection; DEMO loads explicitly labelled fixtures without inference. Launch with `uv run --locked python app.py`; see [M1 instructions](docs/M1.md). The shared response shapes remain in `contracts.py`; live errors never fall back to fixtures.
-
-Source search requires a successfully built dataset selected by `BERN_DATA_DIR`; it never fabricates a result when data is missing. `answer_question` retrieves evidence, calls the configured Apertus service and checks cited IDs/quotes before returning. The initial explicit/natural-language location checks succeeded; broader semantic quality and nonempty-evidence abstention remain unmeasured. See [dataset commands](docs/J2.md), [answer commands](docs/J3.md) and [evaluation instructions](docs/J4.md).
-
-```bash
-uv run --locked python -m core.answer_cli \
-  "According to I.1, what is the place called?" \
-  --transcription-id 16 --data-dir data/derived/j2-full \
-  --out runs/j3-location-01
-```
-
-Use a new output directory for each attempt. The source dataset stays unchanged; run logs retain both failed and successful replies. No inference runs simply by importing the modules. Citation checks verify references and exact spans, not whether a claim logically follows from its quote.
-
-## Avoid editing the same files
-
-Use **separate clones/checkouts**, not two editors in the same folder. For the first task, start from clean main:
+If you already have your local settings and saved data—as in the existing reviewer installation—save your work and update from the repository folder:
 
 ```bash
 git switch main
 git pull --ff-only
-# Jean:
-git switch -c jean/backend
-# Dyane uses a separate clone and instead runs:
-git switch -c jeni/ui
+uv sync --locked --group review-auth
 ```
 
-Each person runs only their own branch command. Do not rerun `switch -c` if the branch already exists; switch to it instead. Jean works in backend/configuration files, Dyane in UI/user-guide files. Commit only your assigned paths, not `git add .` over someone else's work. If the UI needs a contract/dependency change, agree it and let Jean make that change. Integrate early through a reviewed change; never resolve a conflict by discarding the other person's files.
+**To review saved answers immediately:**
 
-`.github/CODEOWNERS` requests the appropriate reviewer when GitHub supports it. It is **not a file lock** and branch protection is not enabled by this scaffold.
+```bash
+uv run --locked --group review-auth python review_app.py --runs-root runs --allow-evaluation --port 17863
+```
 
-## Data and model rights
+Open **http://127.0.0.1:17863/**. Keep your existing `--runs-root` path if your saved runs are elsewhere. Sign in with your own HF account and choose **Start / resume my Hugging Face review**. Your private `.env.review-oauth` stays unchanged by a Git pull.
 
-Our original code is **MIT licensed**; see [LICENSE](LICENSE). MIT does not relicense Apertus weights, the Swiss Federal Archives/University of Bern edition, source excerpts, slides or literature. The Stapfer SQL resource is linked by [opendata.swiss](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799), with its own [open-use terms](https://opendata.swiss/terms-of-use#terms_open). Preserve source references and the scholarly edition credit. The short original-text excerpt in the UI fixture retains that provenance; its English response is our authored display example, not a model result.
+**For LIVE, in another terminal:**
 
-Do not commit raw SQL/datasets, internal notes, modern contributor contacts, meeting transcripts, credentials, model weights or run logs. The private repository setting is not a substitute for that rule. The public projection follows its documented allowlist; independent content/rights review and answer evaluation remain explicit work.
+```bash
+uv run --locked python app.py --port 17860
+```
+
+Open **http://127.0.0.1:17860/**. This needs the completed dataset and a reachable model endpoint in `.env`.
+
+**Or use Docker instead**, after preparing `.env.compose` and the files below:
+
+```bash
+docker compose --env-file .env.compose up --build -d
+```
+
+Do not start Docker and native copies on the same ports. Export in-memory reviews before stopping an old app. If this is a new installation, complete the numbered setup sections before running these commands.
+
+## What you need
+
+- Access to this private repository.
+- uv for the configuration steps and native execution; Docker Engine/Desktop with Compose if using containers. Use Linux containers in Docker Desktop.
+- A completed public dataset for LIVE. Build it from the supplied SQL ZIP, or obtain the existing verified J2 output.
+- A reachable OpenAI-compatible Apertus endpoint for fresh answers. The UI itself does not need a GPU.
+- Saved model-run folders for review. Original review exports are a separate collection.
+- A Hugging Face OAuth application for reviewer sign-in. Each installation generates its own private session secret.
+
+**Git contains code, not your datasets, saved answers, review exports, model weights or private configuration.** Pulling main alone cannot populate the review page or enable OAuth.
+
+## 1 Get the code
+
+```bash
+git clone https://github.com/jean3P/bern-archives-apertus.git
+cd bern-archives-apertus
+uv sync --locked --group review-auth
+```
+
+For an existing checkout, save your own work, then use `git switch main` and `git pull --ff-only`. Keep each person's work in a separate checkout/branch.
+
+The native environment uses Python 3.11.16 and the committed `uv.lock`. The optional `review-auth` group supplies real self-hosted OAuth; it is not a Hugging Face Space mock login.
+
+## 2 Prepare the archival dataset and LIVE settings
+
+Place the supplied archive at `data/raw/stapferappdb_final.sql.zip`. To build a new output directory:
+
+```bash
+uv run --locked python -m core.dataset_cli build --source data/raw/stapferappdb_final.sql.zip --out data/derived/j2-full
+uv run --locked python -m core.dataset_cli verify --data-dir data/derived/j2-full
+```
+
+If you already have a completed output, verify it instead of rebuilding or overwriting it. Details and the public-field policy are in [J2 data commands](docs/J2.md).
+
+Copy `.env.example` to an ignored file named `.env`, using your file manager or shell. Set the endpoint, model ID and completed dataset directory:
+
+```dotenv
+BERN_APERTUS_BASE_URL=http://127.0.0.1:8010/v1
+BERN_APERTUS_MODEL=swiss-ai/Apertus-v1.5-8B
+BERN_APERTUS_TIMEOUT=120
+BERN_APERTUS_API_KEY=
+BERN_DATA_DIR=data/derived/j2-full
+```
+
+The address is an example: use your own local endpoint, private connection or HTTPS service. Keep keys out of Git. Check availability without generating an answer:
+
+```bash
+uv run --locked python -m core.health
+```
+
+The service must expose `/v1/models` and `/v1/chat/completions` and serve the configured model ID. LIVE uses the existing `apertus-qualified` / `bound` answering method; it does not replay benchmark answers. See [portable model setup](docs/SETUP.md).
+
+## 3 Configure reviewer sign-in
+
+In [Hugging Face application settings](https://huggingface.co/settings/applications), create/select a **public OAuth application without a client secret**. Request only account identity/profile access. In its **Redirect URIs** field—not just the homepage—register:
+
+```text
+http://127.0.0.1:17863/auth/huggingface/callback
+```
+
+The callback must return to this installation. Use `127.0.0.1` consistently rather than switching to `localhost`, and keep the path exact. [Hugging Face explains callback matching and public clients](https://huggingface.co/docs/hub/oauth).
+
+Run once, replacing `YOUR_PUBLIC_CLIENT_ID` with the registered client ID:
+
+```bash
+uv run --locked python -m scripts.configure_review --client-id YOUR_PUBLIC_CLIENT_ID
+```
+
+This creates ignored `.env.review-oauth`, generates a random session secret locally without displaying it, and refuses to overwrite an existing configuration. It contains:
+
+```dotenv
+BERN_REVIEW_HF_CLIENT_ID=your_registered_public_client_id
+BERN_REVIEW_HF_REDIRECT_URI=http://127.0.0.1:17863/auth/huggingface/callback
+BERN_REVIEW_SESSION_SECRET=generated_locally_do_not_share
+```
+
+Edit that private file if changing the callback. On Unix it is created with owner-only permissions; on Windows also restrict access through the operating system. Never copy another installation's session secret into chat or Git. Restart the review process after editing its configuration, first exporting any in-memory reviews.
+
+## 4 Supply saved runs and review folders
+
+Obtain the existing saved runs separately. The expected layout is:
+
+```text
+runs/
+  j4-bound-apertus-development-03/   # completed recorded run, including _COMPLETE.json
+  j4-bound-apertus-evaluation-03/
+  j4-bound-qwen-development-03/
+  j4-bound-qwen-evaluation-03/
+  review-exports/                   # original Jean/Jeni exports, read-only in the UI
+  reviewer-exports/                 # new account-specific exports, writable and persistent
+```
+
+Use another parent directory with `--runs-root` if necessary. Original exports belong in this checkout's `runs/review-exports/` for native execution. Preserve complete exports, suggestions and saved-run seals; do not edit model answers or reference snapshots.
+
+Create the export directories if absent; existing files are not changed:
+
+```bash
+uv run --locked python -c "from pathlib import Path; [Path(p).mkdir(parents=True,exist_ok=True) for p in ('runs/review-exports','runs/reviewer-exports')]"
+```
+
+## Run natively
+
+Use two terminals in the repository folder.
+
+**LIVE explorer:**
+
+```bash
+uv run --locked python app.py --port 17860
+```
+
+**Review dashboard:**
+
+```bash
+uv run --locked --group review-auth python review_app.py --runs-root runs --allow-evaluation --port 17863
+```
+
+Open the addresses in the first table on the computer running these processes. No SSH is needed when the server and browser are on your personal computer. For a remote installation, arrange your own private connection; a localhost link is not a public address.
+
+Both native commands bind to loopback by default. The explicit ports avoid confusing a review process on one port with a callback pointing at another.
+
+## Run both pages with Docker Compose
+
+Complete the configuration/data steps above first. Docker launches the web clients, not a GPU model server, data download, importer or benchmark.
+
+1. Copy `compose.env.example` to ignored `.env.compose`.
+2. Edit its host directories to point at your completed dataset, saved runs, original review exports and writable account exports. All four directories must already exist. Docker deliberately refuses to create a missing input directory silently.
+3. Set `BERN_DOCKER_MODEL_URL` to an endpoint reachable **from inside a container**. For a host service under Docker Desktop, use `http://host.docker.internal:8010/v1`; for a remote model, use its reachable URL.
+4. On native Linux, set `BERN_CONTAINER_UID` and `BERN_CONTAINER_GID` to your directory owner's IDs (`id -u` / `id -g`). Docker Desktop users normally keep the defaults. The account-export directory must be writable by this user; do not make private data world-writable.
+
+Validate without printing secret-bearing resolved configuration, then start both pages:
+
+```bash
+docker compose --env-file .env.compose config --quiet
+docker compose --env-file .env.compose up --build -d
+docker compose --env-file .env.compose ps
+```
+
+Use the same browser addresses as native execution. Do not run native and Docker copies on the same host ports simultaneously. If changing the review port, update both the callback in `.env.review-oauth` and the registered HF application settings.
+
+The containers run without GPU access and expose ports only on host loopback. The image excludes credentials, datasets, runs, Git history and model files. Data, recorded runs and originals are mounted read-only; new account reviews persist in the separate writable host directory. Container removal does not delete that directory.
+
+Check model connectivity without inference:
+
+```bash
+docker compose --env-file .env.compose exec live python -m core.health
+```
+
+### Native Linux and a loopback-only model
+
+Container `127.0.0.1` normally means the container itself, not the host. If a model or private tunnel listens only on the native Linux host's loopback, set `BERN_DOCKER_MODEL_URL=http://127.0.0.1:8010/v1` in `.env.compose` and use the optional host-network override (Compose 2.24.4+):
+
+```bash
+docker compose --env-file .env.compose -f compose.yaml -f compose.host-network.yaml up --build -d
+```
+
+This puts only LIVE on the Linux host network and keeps its web binding on `127.0.0.1`. Review retains ordinary bridge networking. Use the same `-f` options for `ps`, `logs`, `exec` and `down`. Do not expose the model publicly merely to make networking work.
+
+### Stop or inspect the UI containers
+
+```bash
+docker compose --env-file .env.compose logs --tail 50 live review
+docker compose --env-file .env.compose down
+```
+
+These commands operate on this Compose project, not an independently managed model server. Do not paste logs containing private archival content. Export in-memory reviews before stopping; exported host files persist.
+
+## Use the pages
+
+In **LIVE**, choose Development/Evaluation for a searchable example or enter a custom question. The selector loads only question text and transcription scope, not expected answers or human suggestions. Click **Ask**, read the answer, then inspect its original evidence and citation. **Answer produced — not human-reviewed** is a response status, not a correctness grade. An abstention does not prove the archive lacks the requested information.
+
+In **Saved run review**, sign in, confirm your HF username, choose a run and select **Start / resume my Hugging Face review**. A new account starts Pending. Save each decision, then **Export my reviews separately** before closing or changing runs. Reload/resume to check persistence. Existing Jean/Jeni originals remain read-only; new account exports never replace them. See [review testing instructions](docs/REVIEW_SIGN_IN.md).
+
+Signed-in users can compare with original judgments after exporting decisions for all cases in that run. Anonymous visitors can already read originals, so this is not a certified blind-review protocol. Historical manual reviews are not retroactively HF-authenticated. Account identity does not verify institutional affiliation or historical accuracy.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| HF button disabled | `.env.review-oauth` or equivalent environment is missing its client ID; a Git pull does not supply private settings |
+| HF says Invalid redirect_uri | Register the exact callback under Redirect URIs for the client ID in use; check host/path and restart after local configuration changes |
+| Sign-in returns to the wrong page | Ensure the callback port reaches this review process, not another app or old tunnel |
+| No saved runs | `--runs-root` must contain immediate completed run folders, not just review exports |
+| Original judgments missing | Supply exports in `runs/review-exports/` or the Docker original-export mount |
+| LIVE reports an error | Verify the J2 dataset and run the model health command in the same native/container environment |
+| Port already in use | Export work and stop your own old UI, or select another port and matching callback; do not stop unrelated services |
+| Docker mount/permission error | Check existing source directories and the account-export UID/GID; inputs stay read-only |
+
+## Measured results and limits
+
+The full public import contains 2,250 transcription records, 92,524 answer rows and 60 questionnaire fields, with 92,336 nonblank answers indexed. These are different units, not 92,524 documents.
+
+The reviewed, exposed 50-question benchmark has these recorded results:
+
+| Candidate | Development | Evaluation | Total |
+| --- | ---: | ---: | ---: |
+| Apertus 8B pipeline | 17/20 | 21/30 | 38/50 |
+| Qwen 32B comparator | 18/20 | 29/30 | 47/50 |
+
+These are assisted human-review outcomes, not independent held-out gold or a claim that parameter count alone caused the difference. Apertus's original 40/50 review remains preserved; two later user-authorized amendments give 38/50. Valid quotes can accompany wrong, incomplete or misleading answers. The separate 100-document audit remains pending; question accuracy does not establish the organizer's processed-document target or an inexpensive-hardware result. See [evaluation protocol](docs/J4.md).
+
+Our code is **MIT licensed**. This does not relicense model weights, the scholarly Stapfer edition, source excerpts or supplied material. Preserve original IDs, editorial markup, historical units and archival references. The dataset is linked by [opendata.swiss](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799), with separate [open-use terms](https://opendata.swiss/terms-of-use#terms_open). Never commit credentials, raw/derived data, internal contributor details or private review exports.

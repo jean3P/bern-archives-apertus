@@ -40,7 +40,8 @@ class SessionIdentities:
         return self.get(getattr(request, "username", None)) if request is not None else None
 
 
-def build_authenticated_server(default_run="", *, runs_root="runs", allow_evaluation=False):
+def build_authenticated_server(default_run="", *, runs_root="runs", allow_evaluation=False,
+                               server_name="127.0.0.1"):
     """Only called after operator OAuth configuration; no host PAT or mock profile fallback."""
     client_id, redirect_uri = oauth_settings()
     if not client_id:
@@ -135,7 +136,7 @@ def build_authenticated_server(default_run="", *, runs_root="runs", allow_evalua
     dashboard = build_app(default_run, runs_root=runs_root, allow_evaluation=allow_evaluation,
                           identity_provider=identities.gradio_identity, oauth_enabled=True)
     app = gr.mount_gradio_app(app, dashboard, path="/", auth_dependency=authentication,
-                             server_name="127.0.0.1", show_error=False, theme=THEME, css=CSS)
+                             server_name=server_name, show_error=False, theme=THEME, css=CSS)
     app.add_middleware(SessionMiddleware, secret_key=secret, session_cookie="bern_review_session",
                        same_site="lax", https_only=redirect_uri.startswith("https://"), max_age=8 * 3600)
     return app

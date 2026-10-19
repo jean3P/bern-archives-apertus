@@ -238,4 +238,9 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", share=False, theme=THEME, css=CSS)
+    import argparse
+    parser = argparse.ArgumentParser(description="Stapfer LIVE evidence explorer and labelled DEMO")
+    parser.add_argument("--host", default="127.0.0.1", help="bind address; use 0.0.0.0 only inside a private container")
+    parser.add_argument("--port", type=int, default=7860)
+    args = parser.parse_args()
+    demo.launch(server_name=args.host, server_port=args.port, share=False, theme=THEME, css=CSS)
