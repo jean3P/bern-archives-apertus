@@ -215,6 +215,7 @@ def main():
         parser.add_argument("--" + flag)
     parser.add_argument("--project-name", help="Optional project name for a separate installation")
     parser.add_argument("--configure-only", action="store_true", help="Prepare settings without starting containers")
+    parser.add_argument("--data-archive", type=Path, help="Verified bootstrap tar archive; installs into this checkout")
     args = parser.parse_args()
     try:
         if args.project_name and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.project_name):
@@ -225,6 +226,21 @@ def main():
         # Prevent shell overrides from silently changing paths, credentials, image or host bindings.
         if any(key.startswith("BERN_") or key.startswith("COMPOSE_") for key in os.environ):
             raise SetupError("Unset exported BERN_* and COMPOSE_* variables before setup; it uses the private files")
+        from scripts.data_bundle import BUNDLE_NAME, MANIFEST_NAME, BundleError, install_bundle
+        archive = args.data_archive
+        if archive is None and (ROOT / BUNDLE_NAME).is_file() and not (ROOT / ".env.compose").exists():
+            if not args.data_dir and not args.runs_dir:
+                archive = ROOT / BUNDLE_NAME
+        if archive is not None:
+            try:
+                print("Verifying and unpacking the supplied dataset bundle...", flush=True)
+                install_bundle(ROOT, archive, ROOT / MANIFEST_NAME)
+            except BundleError as error:
+                raise SetupError(str(error)) from error
+            if not (ROOT / ".env.compose").exists():
+                args.data_dir = args.data_dir or str(ROOT / "data/derived/j2-full")
+                args.runs_dir = args.runs_dir or str(ROOT / "runs")
+                args.original_reviews_dir = args.original_reviews_dir or str(ROOT / "runs/review-exports")
         compose, host = prepare(ROOT, args, native_linux=native_linux)
         project = args.project_name or compose.get("COMPOSE_PROJECT_NAME") or re.sub(r"[^a-z0-9_-]", "", ROOT.name.lower()).lstrip("-_")
         if not project:
@@ -237,7 +253,7 @@ def main():
     except (ValueError, OSError, EOFError, KeyboardInterrupt):
         # Do not print arbitrary input/exception strings, which could contain a pasted credential.
         print("Setup did not finish. Existing settings and running services were not stopped.\n"
-              "Check the dataset/runs folders, Docker availability, unused web ports and matching OAuth callback.\n"
+              "Check the dataset archive/manifest or data/run folders, Docker, unused web ports and OAuth callback.\n"
               "For a partly completed setup, keep the private files, fix them locally and run this command again.", file=sys.stderr)
         return 1
     return 0

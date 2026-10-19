@@ -35,7 +35,7 @@ The real provider redirect has been checked. A successful consent, return and ac
 
 For guided configuration and Docker launch of both pages, run `uv run --locked python -m scripts.setup` from the repository. It generates your own private session secret, asks for local paths and OAuth/model settings, and preserves existing configuration. See the [new installation walkthrough](../README.md#new-installation-with-one-setup-command). The commands below are the separate native/manual alternative.
 
-Obtain the completed saved run folders separately and set `--runs-root` to their parent directory. Historical baseline exports belong in this checkout's ignored `runs/review-exports/`. Do not commit either collection.
+Fresh guided setup unpacks the four completed runs and original review exports from the included verified bootstrap archive. For another collection, obtain its completed saved run folders separately and set `--runs-root` to their parent directory. Historical baseline exports belong in this checkout's ignored `runs/review-exports/`. Unpacked runtime folders and new account reviews stay out of Git; only the deliberate bootstrap archive is tracked. See [bundle contents](DATA_BUNDLE.md).
 
 For real sign-in, register an OAuth application with callback `http://127.0.0.1:17863/auth/huggingface/callback` (or your actual HTTPS callback), using a public client without a client secret. Register it under **Redirect URIs** in HF settings. Generate the ignored private configuration without printing its session secret:
 

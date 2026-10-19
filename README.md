@@ -15,7 +15,7 @@ You can run both pages with Python, or start both with Docker Compose after the 
 
 ## New installation with one setup command
 
-Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop/Engine with Compose 2.24.4 or newer, and start Docker. Obtain access to this private repository, a completed J2 dataset, saved model-run folders and a reachable Apertus endpoint. Register a public Hugging Face OAuth application without a client secret; keep its public client ID ready. You do not need another user's session secret or a GPU on the computer running these pages.
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop/Engine with Compose 2.24.4 or newer, and start Docker. Obtain access to this private repository and a reachable Apertus endpoint. **The included `dataset-challenge3.tar.gz` supplies the completed public-field dataset, four saved runs and original review exports**; you do not need to fetch or place those folders manually. Register a public Hugging Face OAuth application without a client secret; keep its public client ID ready. You do not need another user's session secret or a GPU on the computer running these pages.
 
 **No Apertus checkpoint or endpoint yet?** Follow [Download Apertus and optionally serve it locally](#download-apertus-and-optionally-serve-it-locally) first. A remote model endpoint is equally valid; saved-run review needs no model at all.
 
@@ -25,9 +25,19 @@ cd bern-archives-apertus
 uv run --locked python -m scripts.setup
 ```
 
-**The last line is the setup-and-launch command.** It asks for dataset/run locations, export folders, web ports, the model endpoint/ID and the public OAuth client ID. A model API key, if required, is entered without displaying it. Press Enter to accept a suggested value.
+**The last line is the setup-and-launch command.** On a fresh checkout it automatically verifies and unpacks the included archive into the standard dataset/run folders. It then asks for the new-account export folder, web ports, the model endpoint/ID and the public OAuth client ID. A model API key, if required, is entered without displaying it. Press Enter to accept a suggested value. Explicit custom dataset/run paths remain available instead of the bundle.
 
-The command generates this installation's random session secret, creates ignored `.env`, `.env.review-oauth` and `.env.compose` with private permissions on Unix, prepares export folders, builds the Docker image and waits for both pages. The generated Compose settings also record the project name and network files, so the manual Compose commands below target this installation. On Windows, also restrict private-file access through your operating system. Inputs are mounted read-only and new account exports remain separate. No dataset, model weights or benchmark is downloaded, rebuilt or run.
+The command generates this installation's random session secret, creates ignored `.env`, `.env.review-oauth` and `.env.compose` with private permissions on Unix, prepares export folders, builds the Docker image and waits for both pages. The generated Compose settings also record the project name and network files, so the manual Compose commands below target this installation. On Windows, also restrict private-file access through your operating system. Inputs are mounted read-only and new account exports remain separate. The bundle is copied locally without rebuilding the corpus, rerunning a benchmark or generating model answers. No model weights are included or downloaded.
+
+The archive is a **gzip-compressed tar**, hence `.tar.gz`, rather than a plain `.tar`. It contains historical model outputs and draft evaluation material, not newly verified truth. SHA-256 checks cover the archive and every file, followed by the existing dataset, run-seal and review-binding validators. Unsafe paths, links, duplicates and mismatched existing files are rejected; matching files are reused. A fresh install needs roughly 1 GiB free for unpacking/staging in addition to Docker's storage. Existing private settings and personal reviews are not in the bundle and are never replaced. See [bundle contents and attribution](docs/DATA_BUNDLE.md).
+
+For an explicit archive import (including an already configured checkout):
+
+```bash
+uv run --locked python -m scripts.setup --data-archive dataset-challenge3.tar.gz
+```
+
+It must match the trusted `dataset-challenge3.manifest.json` in this checkout. This installs into the standard local folders; an existing `.env.compose` still keeps its own configured paths. Importing the data does not redirect an existing installation silently.
 
 When prompted about OAuth, register the exact callback shown by setup under **Redirect URIs** in your HF application. With the default ports it is:
 
@@ -124,12 +134,12 @@ Do not start Docker and native copies on the same ports. Export in-memory review
 
 - Access to this private repository.
 - uv for the configuration steps and native execution; Docker Engine/Desktop with Compose if using containers. Use Linux containers in Docker Desktop.
-- A completed public dataset for LIVE. Build it from the supplied SQL ZIP, or obtain the existing verified J2 output.
+- A completed public dataset for LIVE. The included bundle supplies it; building from the original SQL ZIP remains an alternative.
 - A reachable OpenAI-compatible Apertus endpoint for fresh answers. The UI itself does not need a GPU.
-- Saved model-run folders for review. Original review exports are a separate collection.
+- Saved model-run folders for review, included in the bundle. Original review exports remain a separate read-only collection.
 - A Hugging Face OAuth application for reviewer sign-in. Each installation generates its own private session secret.
 
-**Git contains code, not your datasets, saved answers, review exports, model weights or private configuration.** Pulling main alone cannot populate the review page or enable OAuth.
+**Git contains code and one explicit bootstrap data archive**, not unpacked runtime folders, model weights, private configuration or new account reviews. Fresh setup unpacks that archive; pulling main alone does not enable OAuth or replace files in an existing installation.
 
 ## 1 Get the code
 
@@ -145,7 +155,7 @@ The native environment uses Python 3.11.16 and the committed `uv.lock`. The opti
 
 ## 2 Prepare the archival dataset and LIVE settings
 
-Place the supplied archive at `data/raw/stapferappdb_final.sql.zip`. To build a new output directory:
+The guided setup installs `data/derived/j2-full/` from the included bundle. There is no need to rerun the import. If you want to independently build the dataset instead, obtain the original SQL ZIP separately and place it at `data/raw/stapferappdb_final.sql.zip`. To build a new output directory:
 
 ```bash
 uv run --locked python -m core.dataset_cli build --source data/raw/stapferappdb_final.sql.zip --out data/derived/j2-full
@@ -200,7 +210,7 @@ Edit that private file if changing the callback. On Unix it is created with owne
 
 ## 4 Supply saved runs and review folders
 
-Obtain the existing saved runs separately. The expected layout is:
+The included bundle installs all four recorded runs and the original Jean/Jeni review-export history. It does not include new HF-account review collections. The expected layout is:
 
 ```text
 runs/
