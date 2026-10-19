@@ -1,0 +1,30 @@
+Stapfer Evidence Explorer
+
+Project software
+Copyright (c) 2026 Jean Pool Pereyra Principe,
+Jeniffer Dayane Pereyra Principe, and contributors.
+The project software is provided under the MIT License in LICENSE.
+
+Stapfer SQL dataset and scholarly edition
+
+Title: The Stapfer-Enquête: schooling in Switzerland 1799
+Publisher: Swiss Federal Archives
+Scholarly database: compiled by a University of Bern team, 2009-2015
+Source archive: stapferappdb_final.sql.zip
+
+Official catalogue and source resources:
+https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799
+
+Dataset terms-of-use information:
+https://opendata.swiss/terms-of-use#terms_open
+
+The prepared dataset derives from the supplied scholarly SQL database.
+Retain its source identifiers, historical wording, editorial markup,
+archival references and provenance records. Project transformations do not
+constitute new historical transcriptions or independent source verification.
+
+The project's MIT License does not relicense the source SQL dataset,
+scholarly edition, archival images, model weights or other third-party
+material. Consult the original source metadata and applicable terms before
+reuse. The bundled saved model outputs and human reviews are not
+automatically relicensed under the software license.

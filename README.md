@@ -334,4 +334,14 @@ The reviewed, exposed 50-question benchmark has these recorded results:
 
 These are assisted human-review outcomes, not independent held-out gold or a claim that parameter count alone caused the difference. Apertus's original 40/50 review remains preserved; two later user-authorized amendments give 38/50. Valid quotes can accompany wrong, incomplete or misleading answers. The separate 100-document audit remains pending; question accuracy does not establish the organizer's processed-document target or an inexpensive-hardware result. See [the technical guide, pages 2 and 6](docs/stapfer-technical-guide.pdf#page=2).
 
-Our code is **MIT licensed**. This does not relicense model weights, the scholarly Stapfer edition, source excerpts or supplied material. Preserve original IDs, editorial markup, historical units and archival references. The dataset is linked by [opendata.swiss](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799), with separate [open-use terms](https://opendata.swiss/terms-of-use#terms_open). Never commit credentials, raw/derived data, internal contributor details or private review exports.
+## Authors, license and source data
+
+**Jean Pool Pereyra Principe and Jeniffer Dayane Pereyra Principe**, with contributors, developed this project. Our software is licensed under the [MIT License](LICENSE).
+
+### Stapfer SQL dataset
+
+The historical source is **The Stapfer-Enquête: schooling in Switzerland 1799**, published by the **Swiss Federal Archives**. A **University of Bern** team compiled the scholarly database between 2009 and 2015. We use the supplied MySQL archive, `stapferappdb_final.sql.zip`, to build the prepared public-field dataset. We preserve the expert transcriptions rather than create new historical answers.
+
+The [official dataset catalogue](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799) provides the source resources and applicable usage information. The dataset retains its original [terms of use](https://opendata.swiss/terms-of-use#terms_open); our software's MIT license does **not** relicense the SQL dataset, scholarly transcriptions, archival images, model weights or third-party material. See [NOTICE](NOTICE) for source attribution and scope.
+
+Preserve original IDs, editorial markup, historical units and archival references when reusing the prepared dataset. The included `dataset-challenge3.tar.gz` is the explicitly approved bootstrap bundle; it is not a blanket MIT license for its contents. Do not commit credentials, additional raw SQL dumps, internal contributor details, private settings or new private review exports. Unpacked runtime data and reviews remain ignored.
