@@ -62,8 +62,9 @@ def test_archive_service_delegates_without_changing_the_ui_contract(monkeypatch)
     import core.answering
     response = {"mode": "live", "status": "error", "answer": None,
                 "sources": [], "message": "Software-only boundary fixture"}
-    def fake_run(question, transcription_id):
+    def fake_run(question, transcription_id, *, pipeline, retrieval_mode):
         assert (question, transcription_id) == ("Where is the school?", 16)
+        assert pipeline == "apertus-qualified" and retrieval_mode == "bound"
         return response, None
     monkeypatch.setattr(core.answering, "run_answer", fake_run)
     assert answer_question("Where is the school?", 16) == response

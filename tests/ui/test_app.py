@@ -6,7 +6,7 @@ from app import DEMO_BANNER, format_source, on_ask
 def test_ask_shows_demo_label_answer_and_source():
     banner, status, answer, source = on_ask("any question", None)
     assert banner == DEMO_BANNER
-    assert status.value.startswith("Answered")
+    assert status.value.startswith("Demo answer — scripted example")
     assert answer == "The passage names the place as Hörndli."
     assert "Hörndli, heist der Ort, wo die $ Schull $$ ist." in source
     assert "stapfer:answer:41" in source

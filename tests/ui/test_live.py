@@ -36,7 +36,7 @@ def test_live_passes_actual_question_and_normalized_scope(monkeypatch):
     monkeypatch.setattr(app.service, "answer_question", answer)
     banner, status, text, source = app.on_ask("Actual user question", 16.0, mode="live")
     assert calls == [("Actual user question", 16)]
-    assert banner == app.LIVE_BANNER and "Answered" in status.value
+    assert banner == app.LIVE_BANNER and "Answer produced — not human-reviewed" in status.value
     assert "Hörndli" in text and "stapfer:answer:41" in source
 
 
@@ -120,9 +120,9 @@ def test_backend_error_clears_all_old_answer_content(monkeypatch):
 
 def test_mode_change_and_request_start_clear_visible_results():
     scenario, banner, status, text, source = app.on_mode_change("demo")
-    assert scenario.interactive is True and banner == app.DEMO_BANNER and not text and not source
+    assert scenario.interactive is True and scenario.visible is True and banner == app.DEMO_BANNER and not text and not source
     scenario, banner, _, text, source = app.on_mode_change("live")
-    assert scenario.interactive is False and banner == app.LIVE_BANNER and not text and not source
+    assert scenario.interactive is False and scenario.visible is False and banner == app.LIVE_BANNER and not text and not source
     banner, status, text, source = app.clear_response("live")
     assert banner == app.LIVE_BANNER and status.value == "Working…" and not text and not source
 
@@ -138,4 +138,4 @@ def test_component_does_not_round_fractional_scope_before_validation(monkeypatch
 
 def test_existing_demo_path_never_calls_live_service():
     banner, status, text, source = app.on_ask("ignored fixture input", None, mode="demo")
-    assert banner == app.DEMO_BANNER and "Answered" in status.value and "Hörndli" in text
+    assert banner == app.DEMO_BANNER and "Demo answer — scripted example" in status.value and "Hörndli" in text

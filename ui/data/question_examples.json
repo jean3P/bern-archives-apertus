@@ -1,0 +1,302 @@
+[
+  {
+    "case_id": "DEV-01",
+    "split": "development",
+    "question": "According to I.1, what is the place called?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-02",
+    "split": "development",
+    "question": "What is the name of the place where the school is located?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-03",
+    "split": "development",
+    "question": "Using only this transcription, what are the exact GPS coordinates of the classroom?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-04",
+    "split": "development",
+    "question": "According to I.1, what are the exact GPS coordinates of the classroom?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-05",
+    "split": "development",
+    "question": "According to III.11.d, how old is the teacher?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-06",
+    "split": "development",
+    "question": "According to III.11.e, what family members and numbers of sons and daughters are mentioned?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-07",
+    "split": "development",
+    "question": "According to II.9, what summer daily school duration is reported?",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-08",
+    "split": "development",
+    "question": "According to IV.14, what school fee per child is stated? Do not invent a payment frequency.",
+    "transcription_id": 16
+  },
+  {
+    "case_id": "DEV-09",
+    "split": "development",
+    "question": "What place and district are named in I.1 and I.1.d?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-10",
+    "split": "development",
+    "question": "How old is the teacher and how many children are mentioned?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-11",
+    "split": "development",
+    "question": "According to II.5, what does the Provisor teach?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-12",
+    "split": "development",
+    "question": "According to II.9, what is the usual daily school duration and which two days have mornings only?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-13",
+    "split": "development",
+    "question": "According to IV.14, what fee and original payment-period term are given for each child?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-14",
+    "split": "development",
+    "question": "According to II.7, which three books are used by the younger pupils?",
+    "transcription_id": 2069
+  },
+  {
+    "case_id": "DEV-15",
+    "split": "development",
+    "question": "According to I.1 and I.1.d, which place and district are given?",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "DEV-16",
+    "split": "development",
+    "question": "According to III.11.d and III.11.e, what are the teacher's age and family situation?",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "DEV-17",
+    "split": "development",
+    "question": "What subjects are taught according to II.5?",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "DEV-18",
+    "split": "development",
+    "question": "How much school time is reported for the morning and afternoon?",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "DEV-19",
+    "split": "development",
+    "question": "According to IV.14, what exception qualifies the statement that there is no school fee?",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "DEV-20",
+    "split": "development",
+    "question": "For III.11.d, what is the verified zero-based PDF page index? Do not substitute an editorial page marker for a verified PDF mapping.",
+    "transcription_id": 2389
+  },
+  {
+    "case_id": "EVAL-01",
+    "split": "evaluation",
+    "question": "In the survey account that calls the school place Bisicken, which district is it assigned to?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-02",
+    "split": "evaluation",
+    "question": "According to I.1.a and I.1.e, which city and canton are named?",
+    "transcription_id": 457
+  },
+  {
+    "case_id": "EVAL-03",
+    "split": "evaluation",
+    "question": "What place is the school in, and which district does the response name?",
+    "transcription_id": 772
+  },
+  {
+    "case_id": "EVAL-04",
+    "split": "evaluation",
+    "question": "In the survey account describing a school at dielstorff, which district is it said to belong to?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-05",
+    "split": "evaluation",
+    "question": "Which school place and district are named in this response?",
+    "transcription_id": 1448
+  },
+  {
+    "case_id": "EVAL-06",
+    "split": "evaluation",
+    "question": "Selon I.1 et I.1.d, quel est le lieu de l'école et quel est son district ?",
+    "transcription_id": 1753
+  },
+  {
+    "case_id": "EVAL-07",
+    "split": "evaluation",
+    "question": "How old is the teacher, and what child is mentioned?",
+    "transcription_id": 130
+  },
+  {
+    "case_id": "EVAL-08",
+    "split": "evaluation",
+    "question": "According to III.11.d and III.11.e, how old is the teacher and is he married?",
+    "transcription_id": 457
+  },
+  {
+    "case_id": "EVAL-09",
+    "split": "evaluation",
+    "question": "In the Gottstadt survey account naming Niclaus Berger, what are his age and number of children?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-10",
+    "split": "evaluation",
+    "question": "According to III.11.d and III.11.e, what age and family are reported?",
+    "transcription_id": 1106
+  },
+  {
+    "case_id": "EVAL-11",
+    "split": "evaluation",
+    "question": "What are the teacher's age and family situation?",
+    "transcription_id": 1448
+  },
+  {
+    "case_id": "EVAL-12",
+    "split": "evaluation",
+    "question": "Quel âge a le maître et quels âges sont indiqués pour ses deux fils ?",
+    "transcription_id": 1753
+  },
+  {
+    "case_id": "EVAL-13",
+    "split": "evaluation",
+    "question": "According to II.5, what reading material and other skills are taught?",
+    "transcription_id": 130
+  },
+  {
+    "case_id": "EVAL-14",
+    "split": "evaluation",
+    "question": "According to II.9, what are the morning and afternoon school hours?",
+    "transcription_id": 457
+  },
+  {
+    "case_id": "EVAL-15",
+    "split": "evaluation",
+    "question": "According to II.5, which five classroom skills precede the separate memorisation list?",
+    "transcription_id": 772
+  },
+  {
+    "case_id": "EVAL-16",
+    "split": "evaluation",
+    "question": "What subjects or elementary skills are listed in II.5?",
+    "transcription_id": 1106
+  },
+  {
+    "case_id": "EVAL-17",
+    "split": "evaluation",
+    "question": "According to II.9, what are the morning and afternoon school hours?",
+    "transcription_id": 1448
+  },
+  {
+    "case_id": "EVAL-18",
+    "split": "evaluation",
+    "question": "Selon II.7, citez les deux auteurs associés aux Amis des enfans et l'auteur associé au catéchisme retouché.",
+    "transcription_id": 1753
+  },
+  {
+    "case_id": "EVAL-19",
+    "split": "evaluation",
+    "question": "According to IV.14, what school fees are listed for day pupils, repetition pupils and night pupils? Preserve the amounts and periods.",
+    "transcription_id": 130
+  },
+  {
+    "case_id": "EVAL-20",
+    "split": "evaluation",
+    "question": "According to IV.14, do the pupils pay tuition, and are the gifts to the teacher compulsory?",
+    "transcription_id": 457
+  },
+  {
+    "case_id": "EVAL-21",
+    "split": "evaluation",
+    "question": "According to IV.14, are a school fund and school fees reported as present?",
+    "transcription_id": 772
+  },
+  {
+    "case_id": "EVAL-22",
+    "split": "evaluation",
+    "question": "According to IV.14, what weekly fee is charged and who pays for poor householders' children?",
+    "transcription_id": 1106
+  },
+  {
+    "case_id": "EVAL-23",
+    "split": "evaluation",
+    "question": "According to IV.14, on what basis is the school fee paid? Do not invent a numerical amount.",
+    "transcription_id": 1448
+  },
+  {
+    "case_id": "EVAL-24",
+    "split": "evaluation",
+    "question": "What does the Chéserex survey response report about school fees?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-25",
+    "split": "evaluation",
+    "question": "Using only III.11.d, what is Niclaus Berger's exact date of birth, including day, month and year?",
+    "transcription_id": 772
+  },
+  {
+    "case_id": "EVAL-26",
+    "split": "evaluation",
+    "question": "Using only III.11.d, what is the teacher's exact date of birth, including day, month and year?",
+    "transcription_id": 1753
+  },
+  {
+    "case_id": "EVAL-27",
+    "split": "evaluation",
+    "question": "According to III.11.d, how old is the teacher?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-28",
+    "split": "evaluation",
+    "question": "According to IV.14, what fee must the pupils pay?",
+    "transcription_id": null
+  },
+  {
+    "case_id": "EVAL-29",
+    "split": "evaluation",
+    "question": "Using only I.1.a, what are the exact GPS coordinates of the classroom?",
+    "transcription_id": 457
+  },
+  {
+    "case_id": "EVAL-30",
+    "split": "evaluation",
+    "question": "Using only I.1, what are the exact GPS coordinates of the classroom?",
+    "transcription_id": 1448
+  }
+]

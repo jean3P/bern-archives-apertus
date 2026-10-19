@@ -2,6 +2,7 @@
 
 import html
 import json
+from pathlib import Path
 
 import gradio as gr
 
@@ -11,6 +12,13 @@ from ui.review_records import (DECISIONS, NOT_COUNTED, ReviewError, RunLoadError
 
 
 BANNER = "## SAVED RUN REVIEW — recorded results, not a fresh LIVE answer"
+
+# Project-team affiliations supplied by Jean; historical review authors stay exact.
+REVIEWER_INSTITUTIONS = {
+    "jeni": "BFH — Berner Fachhochschule",
+    "jean": "University of Neuchâtel",
+    "jean (user-authorized assistant amendment)": "University of Neuchâtel",
+}
 
 THEME = gr.themes.Default().set(
     block_title_text_size="*text_lg",
@@ -192,18 +200,40 @@ def on_table_select(dirty, evt: gr.SelectData):
     return evt.row_value[0]
 
 
-def on_load(run_path, allow_evaluation=False):
-    """Load and verify a run; on failure clear everything and explain why."""
+def on_load(run_path, allow_evaluation=False, *, export_root=None):
+    """Load a run and its newest checked export; never hide a failed resume as Pending."""
     try:
         run = load_run(run_path, allow_evaluation=allow_evaluation)
         run["references"] = load_references(run["directory"], run["manifest"]["split"],
                                              allow_evaluation=allow_evaluation)
-    except (RunLoadError, ValueError, OSError) as exc:
-        message = f'<p class="load-error">Could not load run: {esc(exc)}</p>'
+        names = list_exports(run) if export_root is None else list_exports(run, export_root)
+        run["restored_export"] = names[0] if names else None
+        reviews = ((import_session(run, names[0]) if export_root is None
+                    else import_session(run, names[0], export_root)) if names else {})
+    except (RunLoadError, ReviewError, ValueError, OSError) as exc:
+        message = (f'<p class="load-error">Could not load run or restore its latest saved review: {esc(exc)}. '
+                   'Saved files were not changed; no older export was silently substituted.</p>')
         return None, message, [], gr.Dropdown(choices=[], value=None), {}
     case_ids = [case["case_id"] for case in run["cases"]]
     first = case_ids[0] if case_ids else None
-    return run, run_summary(run), case_table(run), gr.Dropdown(choices=case_ids, value=first), {}
+    if names:
+        reviewed = sum(review.get("decision") is not None for review in reviews.values())
+        message = (f'<p class="review-ok">Restored saved reviews: {reviewed} of {len(case_ids)} cases '
+                   f'from {esc(names[0])}. Decisions, notes and suggestions are loaded; '
+                   'the original model answers and saved export are unchanged.</p>')
+    else:
+        message = ('<p class="review-panel">No saved review export was found for this run. '
+                   'Starting a new review with all cases Pending.</p>')
+    return (run, run_summary(run) + message, case_table(run, reviews),
+            gr.Dropdown(choices=case_ids, value=first), reviews)
+
+
+def on_load_folder(folder_name, locations, allow_evaluation=False):
+    """Resolve a displayed folder name through the server's known-run mapping only."""
+    if not isinstance(folder_name, str) or folder_name not in locations:
+        return (None, '<p class="load-error">Choose a saved run folder from the list.</p>',
+                [], gr.Dropdown(choices=[], value=None), {})
+    return on_load(locations[folder_name], allow_evaluation)
 
 
 def on_select(run, case_id):
@@ -306,17 +336,43 @@ def find_case(run, case_id):
     return next((c for c in run["cases"] if c["case_id"] == case_id), None)
 
 
-def on_show_form(run, reviews, case_id):
-    """Fill the review form with this case's review in memory, or a fresh Pending one."""
+def on_show_reviewer(run, reviews, case_id):
+    """Display the decision's stored author, never use it as the current editor's identity."""
+    if find_case(run, case_id) is None:
+        return ""
+    return (reviews.get(case_id, {}).get("reviewer") or "Not reviewed yet")
+
+
+def on_show_institution(run, reviews, case_id):
+    """Show the team's declared affiliation separately, without changing review records."""
+    if find_case(run, case_id) is None:
+        return ""
+    author = reviews.get(case_id, {}).get("reviewer")
+    if not author:
+        return "Not reviewed yet"
+    return REVIEWER_INSTITUTIONS.get(author.strip().casefold(), "Not specified")
+
+
+def on_show_identity(run, reviews, case_id):
+    return (on_show_reviewer(run, reviews, case_id), on_show_institution(run, reviews, case_id))
+
+
+def review_form_values(run, reviews, case_id):
+    """Plain data, safe inside a Gradio callback where component constructors are updates."""
     case = find_case(run, case_id)
     if case is None:
-        return "Pending", gr.Dropdown(choices=[NOT_COUNTED], value=NOT_COUNTED), "", "", ""
+        return "Pending", [NOT_COUNTED], NOT_COUNTED, "", "", "", "", ""
     review = reviews.get(case_id, {})
     supported = review.get("supported_claims")
     choices = [NOT_COUNTED] + [str(number) for number in range(case["claim_count"] + 1)]
-    return (decision_label(review),
-            gr.Dropdown(choices=choices, value=NOT_COUNTED if supported is None else str(supported)),
-            review.get("notes", ""), review.get("suggestion", ""), "")
+    return (decision_label(review), choices, NOT_COUNTED if supported is None else str(supported),
+            review.get("notes", ""), review.get("suggestion", ""), "", *on_show_identity(run, reviews, case_id))
+
+
+def on_show_form(run, reviews, case_id):
+    """Fill the historical read-only form; preserve its existing return contract."""
+    value = review_form_values(run, reviews, case_id)
+    return value[0], gr.Dropdown(choices=value[1], value=value[2]), *value[3:]
 
 
 def on_save_review(run, reviews, choice, case_id, reviewer, decision, supported, notes, suggestion):
@@ -400,14 +456,114 @@ def on_resume(run, choice, session_name):
     return reviews, case_table(run, reviews, choice), review_progress(run, reviews, choice), message
 
 
-def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False) -> gr.Blocks:
-    choices = discover_runs(runs_root, allow_evaluation=allow_evaluation)
-    if default_run and default_run not in choices:
-        choices.append(default_run)
-    selected = default_run or (choices[0] if choices else None)
+def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False,
+              identity_provider=None, oauth_enabled=False) -> gr.Blocks:
+    from ui import review_access as access
+    from ui.reviewer_accounts import require_own_run
+
+    def identity(request):
+        return identity_provider(request) if identity_provider is not None else None
+
+    def writable(run, request):
+        try:
+            require_own_run(run, identity(request))
+            return True
+        except ReviewError:
+            return False
+
+    paths = discover_runs(runs_root, allow_evaluation=allow_evaluation)
+    if default_run and default_run not in paths:
+        paths.append(default_run)
+    locations = {Path(path).name: path for path in paths}
+    if len(locations) != len(paths):
+        raise ValueError("Saved run folders must have distinct names.")
+    choices = list(locations)
+    selected = Path(default_run).name if default_run else (choices[0] if choices else None)
+
+    def load_view(folder, own, request):
+        try:
+            run, restored, message = access.load_review(folder, locations, identity(request), own=own,
+                                                        allow_evaluation=allow_evaluation)
+        except (ReviewError, RunLoadError, ValueError, OSError) as exc:
+            return None, f'<p class="load-error">{esc(exc)}</p>', [], gr.Dropdown(choices=[], value=None), {}
+        case_ids = [case["case_id"] for case in run["cases"]]
+        return (run, run_summary(run) + f'<p class="review-ok">{esc(message)}</p>',
+                case_table(run, restored), gr.Dropdown(choices=case_ids, value=case_ids[0] if case_ids else None), restored)
+
+    def load_original(folder, request: gr.Request):
+        return load_view(folder, False, request)
+
+    def load_mine(folder, request: gr.Request):
+        return load_view(folder, True, request)
+
+    def show_form(run, reviews, case_id, request: gr.Request):
+        values = review_form_values(run, reviews, case_id)
+        enabled = writable(run, request)
+        return (gr.Radio(value=values[0], interactive=enabled),
+                gr.Dropdown(choices=values[1], value=values[2], interactive=enabled),
+                gr.Textbox(value=values[3], interactive=enabled), gr.Textbox(value=values[4], interactive=enabled),
+                *values[5:], gr.Button(interactive=enabled), gr.Button(interactive=enabled))
+
+    def save_view(run, reviews, choice, case_id, decision, supported, notes, suggestion, request: gr.Request):
+        try:
+            updated = access.save_own(run, reviews, find_case(run, case_id), identity(request),
+                                      decision, supported, notes, suggestion)
+        except (ReviewError, ValueError) as exc:
+            return reviews, gr.skip(), gr.skip(), f'<p class="load-error">Not saved: {esc(exc)}</p>'
+        return (updated, case_table(run, updated, choice), review_progress(run, updated, choice),
+                '<p class="review-ok">Your review is in memory. Export to persist it separately from original reviews.</p>')
+
+    def export_view(run, reviews, request: gr.Request):
+        try:
+            session = access.export_for_account(run, reviews, identity(request))
+            return f'<p class="review-ok">Your review exported to {esc(session.name)}. Original reviews are unchanged.</p>'
+        except (ReviewError, RunLoadError, ValueError, OSError) as exc:
+            return f'<p class="load-error">Not exported: {esc(exc)}</p>'
+
+    def list_view_exports(run, request: gr.Request):
+        try:
+            names = access.exports_for_view(run, identity(request))
+        except (ReviewError, OSError, ValueError):
+            names = []
+        return gr.Dropdown(choices=names, value=names[0] if names else None)
+
+    def resume_view(run, choice, session_name, request: gr.Request):
+        if run is None:
+            return gr.skip(), gr.skip(), gr.skip(), '<p class="load-error">Load a run first.</p>'
+        try:
+            restored = access.resume_for_view(run, session_name, identity(request))
+        except (ReviewError, RunLoadError, ValueError, OSError) as exc:
+            return gr.skip(), gr.skip(), gr.skip(), f'<p class="load-error">Not resumed: {esc(exc)}</p>'
+        return restored, case_table(run, restored, choice), review_progress(run, restored, choice), "Saved review restored."
+
+    def edit_lock(run, reviews, case_id, decision, supported, notes, suggestion, request: gr.Request):
+        values = list(on_form_edit(run, reviews, case_id, decision, supported, notes, suggestion))
+        values[7] = gr.Button(interactive=not values[0] and writable(run, request))
+        return (*values, gr.Button(interactive=not values[0]))
+
+    def unlock_view(run, request: gr.Request):
+        values = list(on_unlock())
+        values[7] = gr.Button(interactive=writable(run, request))
+        return (*values, gr.Button(interactive=True))
+
+    def account_message(request: gr.Request):
+        account = identity(request)
+        return (f"Signed in as **{esc(account.label)}**. New judgments belong only to your account." if account else
+                "Not signed in. Original reviews are read-only. Sign in to start your own review.")
+
     with gr.Blocks(title="Saved run review", analytics_enabled=False) as review:
         gr.Markdown("# Stapfer saved run review")
         gr.Markdown(BANNER)
+        gr.Markdown("**Original reviews are read-only.** A signed-in reviewer starts a separate session, "
+                    "initially Pending, and exports only their own judgments. Existing answers and grades never change.")
+        with gr.Row():
+            gr.Button("Sign in with Hugging Face", link="/auth/huggingface/login" if oauth_enabled else None,
+                      interactive=oauth_enabled)
+            gr.Button("Sign out", link="/auth/logout" if oauth_enabled else None, interactive=oauth_enabled)
+        if not oauth_enabled:
+            gr.Markdown("**Hugging Face sign-in is not configured yet.** The operator must provide the registered "
+                        "OAuth client ID. No local/mock login or manually typed name can authorize a review.")
+        account_info = gr.Markdown()
         if allow_evaluation:
             gr.Markdown("**Evaluation-split review enabled explicitly.** These questions have already "
                         "been used for development. Draft references are not approved truth. "
@@ -418,8 +574,9 @@ def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False
 
         with gr.Row():
             run_path = gr.Dropdown(label="Saved run folder", choices=choices, value=selected,
-                                   allow_custom_value=True, scale=4)
-            load_button = gr.Button("Load", variant="primary", scale=1)
+                                   allow_custom_value=False, scale=4)
+            load_button = gr.Button("View original reviews (read-only)", variant="primary", scale=1)
+        mine_button = gr.Button("Start / resume my Hugging Face review")
         run_info = gr.HTML(label="Run", show_label=True, container=True, padding=True)
         filter_choice = gr.Radio(choices=FILTERS, value="All", label="Show")
         filter_info = gr.HTML()
@@ -443,21 +600,27 @@ def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False
             artifact_view = gr.Textbox(label="File contents", interactive=False, lines=20, max_lines=40)
 
         gr.Markdown("### Human review")
-        reviewer = gr.Textbox(label="Reviewer name (required for a decision)")
         with gr.Row():
-            decision = gr.Radio(choices=list(DECISIONS), value="Pending", label="Decision")
-            supported = gr.Dropdown(choices=[NOT_COUNTED], value=NOT_COUNTED, label="Supported claims")
-        notes = gr.Textbox(label="Review notes", lines=2)
+            saved_reviewer = gr.Textbox(label="Reviewer of this decision", interactive=False,
+                                       info="Author stored with the displayed review; restored separately for every case.")
+            saved_institution = gr.Textbox(label="Reviewer institution", interactive=False,
+                                          info="Affiliation supplied by the project team, not institutional endorsement.")
+        reviewer = gr.Textbox(label="Your name (required only when saving an edit)",
+                             visible=False, interactive=False)
+        with gr.Row():
+            decision = gr.Radio(choices=list(DECISIONS), value="Pending", label="Decision", interactive=False)
+            supported = gr.Dropdown(choices=[NOT_COUNTED], value=NOT_COUNTED, label="Supported claims", interactive=False)
+        notes = gr.Textbox(label="Review notes", lines=2, interactive=False)
         suggestion = gr.Textbox(label="Human suggestion: corrected answer (never replaces the model answer)",
-                                lines=3)
+                                lines=3, interactive=False)
         with gr.Row():
-            save_button = gr.Button("Save review (in memory)", variant="primary")
+            save_button = gr.Button("Save my review (in memory)", variant="primary", interactive=False)
             discard_button = gr.Button("Discard changes")
         unsaved_marker = gr.HTML()
         review_message = gr.HTML()
 
         gr.Markdown("### Export")
-        export_button = gr.Button("Export reviews and suggestions to a new folder")
+        export_button = gr.Button("Export my reviews separately", interactive=False)
         with gr.Row():
             export_choice = gr.Dropdown(choices=[], value=None, scale=3,
                                         label="Earlier exports of this run (newest first)")
@@ -465,38 +628,41 @@ def build_app(default_run: str = "", *, runs_root="runs", allow_evaluation=False
         export_message = gr.HTML()
 
         panels = [question_panel, evidence_panel, reference_panel]
-        form = [decision, supported, notes, suggestion, review_message]
+        form = [decision, supported, notes, suggestion, review_message, saved_reviewer, saved_institution,
+                save_button, export_button]
         technical = [timeline, artifact_view]
         lock = [dirty, unsaved_marker, case_id, previous_button, next_button, load_button, resume_button,
-                export_button]
+                export_button, mine_button]
         form_values = [run_state, reviews, case_id, decision, supported, notes, suggestion]
-        load_button.click(lambda path: on_load(path, allow_evaluation),
-                          [run_path], [run_state, run_info, cases, case_id, reviews]).then(
-            on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
-            on_select, [run_state, case_id], panels).then(
-            on_show_form, [run_state, reviews, case_id], form).then(
-            on_show_technical, [run_state, case_id, artifact_choice], technical).then(
-            on_list_exports, [run_state], export_choice).then(
-            on_unlock, None, lock)
+        for button, callback in [(load_button, load_original), (mine_button, load_mine)]:
+            button.click(callback, [run_path], [run_state, run_info, cases, case_id, reviews]).then(
+                on_filter, [run_state, reviews, filter_choice], [cases, filter_info]).then(
+                on_select, [run_state, case_id], panels).then(
+                show_form, [run_state, reviews, case_id], form).then(
+                on_show_technical, [run_state, case_id, artifact_choice], technical).then(
+                list_view_exports, [run_state], export_choice).then(
+                unlock_view, [run_state], lock)
         case_id.change(on_select, [run_state, case_id], panels)
         case_id.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
         artifact_choice.change(on_show_technical, [run_state, case_id, artifact_choice], technical)
-        case_id.change(on_show_form, [run_state, reviews, case_id], form)
-        save_button.click(on_save_review,
-                          [run_state, reviews, filter_choice, case_id, reviewer, decision, supported,
+        case_id.change(show_form, [run_state, reviews, case_id], form)
+        save_button.click(save_view,
+                          [run_state, reviews, filter_choice, case_id, decision, supported,
                            notes, suggestion],
                           [reviews, cases, filter_info, review_message]).then(
-            on_form_edit, form_values, lock)
-        discard_button.click(on_show_form, [run_state, reviews, case_id], form).then(on_unlock, None, lock)
+            on_show_identity, [run_state, reviews, case_id], [saved_reviewer, saved_institution]).then(
+            edit_lock, form_values, lock)
+        discard_button.click(show_form, [run_state, reviews, case_id], form).then(unlock_view, [run_state], lock)
         for field in [decision, supported, notes, suggestion]:
-            field.input(on_form_edit, form_values, lock)
-        export_button.click(on_export, [run_state, reviews], export_message).then(
-            on_list_exports, [run_state], export_choice)
-        resume_button.click(on_resume, [run_state, filter_choice, export_choice],
+            field.input(edit_lock, form_values, lock)
+        export_button.click(export_view, [run_state, reviews], export_message).then(
+            list_view_exports, [run_state], export_choice)
+        resume_button.click(resume_view, [run_state, filter_choice, export_choice],
                             [reviews, cases, filter_info, export_message]).then(
-            on_show_form, [run_state, reviews, case_id], form).then(on_unlock, None, lock)
+            show_form, [run_state, reviews, case_id], form).then(unlock_view, [run_state], lock)
         filter_choice.change(on_filter, [run_state, reviews, filter_choice], [cases, filter_info])
         cases.select(on_table_select, [dirty], case_id)
         previous_button.click(on_previous, [run_state, reviews, filter_choice, case_id], case_id)
         next_button.click(on_next, [run_state, reviews, filter_choice, case_id], case_id)
+        review.load(account_message, None, account_info)
     return review
