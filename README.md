@@ -17,6 +17,8 @@ You can run both pages with Python, or start both with Docker Compose after the 
 
 Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop/Engine with Compose 2.24.4 or newer, and start Docker. Obtain access to this private repository, a completed J2 dataset, saved model-run folders and a reachable Apertus endpoint. Register a public Hugging Face OAuth application without a client secret; keep its public client ID ready. You do not need another user's session secret or a GPU on the computer running these pages.
 
+**No Apertus checkpoint or endpoint yet?** Follow [Download Apertus and optionally serve it locally](#download-apertus-and-optionally-serve-it-locally) first. A remote model endpoint is equally valid; saved-run review needs no model at all.
+
 ```bash
 git clone https://github.com/jean3P/bern-archives-apertus.git
 cd bern-archives-apertus
@@ -38,6 +40,51 @@ After startup open LIVE at **http://127.0.0.1:17860/** and review at **http://12
 Existing configuration is reused, never overwritten or given a new secret. Run the same setup command after editing your own private settings to restart stopped containers. If a page is already running, open it instead: setup reports the occupied port and stops without killing anything. Export in-memory reviews before stopping your own old native/Docker app. Unset exported `BERN_*`/`COMPOSE_*` variables before using setup so they cannot silently override its private files.
 
 If setup reports an error, keep the generated files, correct the indicated setting locally and retry. A failed Docker startup may leave this project's containers running; use the matching `down` command below only after exporting work. Advanced/manual configuration and separate native launch remain available in the following sections. `--configure-only` prepares settings without launching Docker; `--help` lists optional arguments for scripted installation.
+
+## Download Apertus and optionally serve it locally
+
+Skip this section if you already have a compatible remote Apertus endpoint. The web-page setup does not silently download large models or claim a GPU.
+
+1. Open the [official Apertus model page](https://huggingface.co/swiss-ai/Apertus-v1.5-8B), read and accept its access conditions with your own HF account. Then authenticate the download tool locally:
+
+   ```bash
+   uv run --locked hf auth login
+   ```
+
+   **This is different from the review dashboard's OAuth sign-in.** Use an account authorized to download the model. Never put an HF token in Git, the OAuth client-ID field, the Docker image or a command pasted into chat.
+
+2. Download or reuse the pinned checkpoint:
+
+   ```bash
+   uv run --locked python -m scripts.setup_apertus
+   ```
+
+   The helper shows the checkpoint size and remaining download before asking permission. It reuses complete cached files, supports interrupted-download recovery and checks required configuration/tokenizer files plus indexed weight shards. It writes separate ignored `.env.apertus` settings without overwriting existing settings. It **does not start Docker, load the model or change the web apps**.
+
+   The default ignored cache is `model-cache/huggingface/`. Use `--cache-dir /your/model/cache` for another disk or an existing Hugging Face **hub cache** (the folder containing `models--swiss-ai--Apertus-v1.5-8B`, not a single checkpoint file). `--dry-run` checks online metadata and size without downloading weights or writing server settings; `--offline` reuses an already complete pinned snapshot without contacting the Hub. `--yes` approves an intentional scripted download.
+
+   Leave ample disk space for both weights and the Docker image: the helper checks remaining weight bytes plus a 4 GiB margin, but that is not the image's storage budget. Cached-file checks are not a new full cryptographic weight audit. [HF documents snapshot reuse and download planning](https://huggingface.co/docs/huggingface_hub/guides/download).
+
+3. **Only if serving locally**, use an NVIDIA GPU host with Docker GPU access and BF16 support. This pinned server image targets Linux amd64; native Linux or an appropriately configured Windows/WSL2 Docker GPU environment is needed. Mac/CPU-only computers should use a remote endpoint. Install/configure GPU support yourself using [NVIDIA's Container Toolkit guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html); the helper does not alter drivers or restart Docker.
+
+   Inspect `.env.apertus` before starting. Defaults select GPU `0`, port `8010`, an 8,192-token context, BF16 and a **90% GPU memory allocation**. This is intended for an otherwise available GPU, not a promise that it fits every GPU. Weights, activations and KV cache all need memory; use a sufficiently large GPU and check free VRAM. Adjust the GPU/memory fraction locally when sharing hardware. No other job will be stopped to make space. This local deployment has not been qualified on every consumer GPU.
+
+   ```bash
+   docker compose --env-file .env.apertus -f compose.apertus.yaml config --quiet
+   docker compose --env-file .env.apertus -f compose.apertus.yaml up -d --wait --wait-timeout 600
+   ```
+
+   Docker pulls the pinned Swiss AI vLLM image if missing. It mounts the downloaded snapshot read-only, serves the public model ID `swiss-ai/Apertus-v1.5-8B` on `http://127.0.0.1:8010/v1`, and checks readiness without generating an answer. The server runs offline with no HF token passed into its container. The image/model pins are in `scripts/setup_apertus.py` and `compose.apertus.yaml`; do not replace them with `latest` to reproduce this setup. Apertus 1.5 uses the [publisher's adapted vLLM image](https://huggingface.co/swiss-ai/Apertus-v1.5-8B#vllm), not an assumed compatible generic image.
+
+4. Run `uv run --locked python -m scripts.setup` for the two web pages. Accept the suggested host-local model URL, or enter the reachable remote URL. On native Linux the UI helper handles the host-loopback networking override; Docker Desktop uses `host.docker.internal`. Native Python clients use `http://127.0.0.1:8010/v1` in `.env` instead. The helper never rewrites an existing `.env`; keep native and Docker endpoint choices appropriate to their environments.
+
+The optional GPU server is a **separate Compose project** from the two CPU web pages. Stop only this local model project when you no longer need it:
+
+```bash
+docker compose --env-file .env.apertus -f compose.apertus.yaml down
+```
+
+This preserves the host checkpoint cache and does not stop the UI project. Check that the model is idle before stopping it. If port 8010 is already used, reuse that existing endpoint or edit your own model/UI ports; do not stop an unrelated server. Unset stale exported `BERN_*`/`COMPOSE_*` overrides when using the generated files. Logs and configuration can contain private information: use `config --quiet`, and do not publish private settings. No benchmark is run by these setup commands.
 
 ## Already configured run now
 
