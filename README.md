@@ -13,6 +13,32 @@ The application has two independent pages:
 
 You can run both pages with Python, or start both with Docker Compose after the one-time configuration below. Neither method installs or starts a model server automatically.
 
+## New installation with one setup command
+
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop/Engine with Compose 2.24.4 or newer, and start Docker. Obtain access to this private repository, a completed J2 dataset, saved model-run folders and a reachable Apertus endpoint. Register a public Hugging Face OAuth application without a client secret; keep its public client ID ready. You do not need another user's session secret or a GPU on the computer running these pages.
+
+```bash
+git clone https://github.com/jean3P/bern-archives-apertus.git
+cd bern-archives-apertus
+uv run --locked python -m scripts.setup
+```
+
+**The last line is the setup-and-launch command.** It asks for dataset/run locations, export folders, web ports, the model endpoint/ID and the public OAuth client ID. A model API key, if required, is entered without displaying it. Press Enter to accept a suggested value.
+
+The command generates this installation's random session secret, creates ignored `.env`, `.env.review-oauth` and `.env.compose` with private permissions on Unix, prepares export folders, builds the Docker image and waits for both pages. The generated Compose settings also record the project name and network files, so the manual Compose commands below target this installation. On Windows, also restrict private-file access through your operating system. Inputs are mounted read-only and new account exports remain separate. No dataset, model weights or benchmark is downloaded, rebuilt or run.
+
+When prompted about OAuth, register the exact callback shown by setup under **Redirect URIs** in your HF application. With the default ports it is:
+
+```text
+http://127.0.0.1:17863/auth/huggingface/callback
+```
+
+After startup open LIVE at **http://127.0.0.1:17860/** and review at **http://127.0.0.1:17863/** (or the ports you selected). The command automatically chooses the existing host-network override for a native Linux loopback-only model; Docker Desktop uses `host.docker.internal` for a suggested host-local endpoint. Page readiness does not establish model connectivity: test that separately with `core.health` as described below.
+
+Existing configuration is reused, never overwritten or given a new secret. Run the same setup command after editing your own private settings to restart stopped containers. If a page is already running, open it instead: setup reports the occupied port and stops without killing anything. Export in-memory reviews before stopping your own old native/Docker app. Unset exported `BERN_*`/`COMPOSE_*` variables before using setup so they cannot silently override its private files.
+
+If setup reports an error, keep the generated files, correct the indicated setting locally and retry. A failed Docker startup may leave this project's containers running; use the matching `down` command below only after exporting work. Advanced/manual configuration and separate native launch remain available in the following sections. `--configure-only` prepares settings without launching Docker; `--help` lists optional arguments for scripted installation.
+
 ## Already configured run now
 
 If you already have your local settings and saved data—as in the existing reviewer installation—save your work and update from the repository folder:
@@ -169,7 +195,7 @@ Both native commands bind to loopback by default. The explicit ports avoid confu
 
 ## Run both pages with Docker Compose
 
-Complete the configuration/data steps above first. Docker launches the web clients, not a GPU model server, data download, importer or benchmark.
+For the guided configuration and launch, use `uv run --locked python -m scripts.setup` above. The remaining instructions are the manual alternative. Docker launches the web clients, not a GPU model server, data download, importer or benchmark.
 
 1. Copy `compose.env.example` to ignored `.env.compose`.
 2. Edit its host directories to point at your completed dataset, saved runs, original review exports and writable account exports. All four directories must already exist. Docker deliberately refuses to create a missing input directory silently.
