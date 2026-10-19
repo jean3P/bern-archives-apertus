@@ -7,12 +7,18 @@ import gradio as gr
 from contracts import validate_response
 from core import service
 from ui.demo import load_demo_response
+from ui.question_catalog import QUESTION_SETS, question_choices, question_input
 
 DEMO_BANNER = "## DEMO — display example, not a model result"
-LIVE_BANNER = "## LIVE — Apertus answers from retrieved archival evidence"
+LIVE_BANNER = (
+    "## LIVE — Apertus 8B · reviewed field-bound setup\n\n"
+    f"Method: `{service.LIVE_PIPELINE}` / `{service.LIVE_RETRIEVAL_MODE}`. "
+    "This is a fresh attempt, not a saved benchmark answer. "
+    "It has not been human-reviewed and may differ from the recorded result."
+)
 
 STATUS_LABELS = {
-    "answered": "Answered",
+    "answered": "Answer produced — not human-reviewed",
     "insufficient_evidence": "Not enough evidence to answer",
     "error": "Error — no answer was produced",
 }
@@ -34,9 +40,9 @@ CSS = """
     border-left: 6px solid transparent !important;
 }
 .status-answered textarea {
-    background: #e8f5e9 !important;
-    color: #1b5e20 !important;
-    border-left-color: #2e7d32 !important;
+    background: #eaf2fb !important;
+    color: #17416b !important;
+    border-left-color: #2563eb !important;
 }
 .status-insufficient_evidence textarea {
     background: #fff8e1 !important;
@@ -85,6 +91,9 @@ def format_source(card: dict) -> str:
 def format_status(response: dict) -> str:
     """Human-readable status plus the response's explanation, if any."""
     label = STATUS_LABELS[response["status"]]
+    if response["status"] == "answered":
+        label = ("Demo answer — scripted example" if response["mode"] == "demo" else
+                 label + "\nCheck the answer against the original evidence. Valid citations do not prove correctness.")
     if response["message"]:
         return f"{label}\n{response['message']}"
     return label
@@ -115,8 +124,36 @@ def clear_response(mode="live"):
 
 def on_mode_change(mode):
     banner, _, answer, source = clear_response(mode)
-    return (gr.Dropdown(interactive=mode == "demo"), banner,
+    return (gr.Dropdown(interactive=mode == "demo", visible=mode == "demo"), banner,
             status_box("ready", "Ready"), answer, source)
+
+
+def on_question_mode(mode, split):
+    """Benchmark selectors are only relevant to LIVE, not scripted DEMO fixtures."""
+    return (gr.Radio(interactive=mode == "live"),
+            gr.Dropdown(interactive=mode == "live" and split != "custom"))
+
+
+def on_question_set_change(split, mode="live"):
+    choices = question_choices(split)
+    hint = ("Type your own question, then click Ask." if split == "custom"
+            else "Choose a question below. Selection does not call the model.")
+    return (gr.Dropdown(choices=choices, value=None,
+                        interactive=mode == "live" and bool(choices)),
+            "", "", status_box("ready", hint), "", "")
+
+
+def on_question_select(case_id, split, mode="live"):
+    """Populate only editable question/scope; never run retrieval or generation."""
+    if case_id is None:
+        return "", "", status_box("ready", "Choose a question or use Custom question."), "", ""
+    try:
+        text, scope = question_input(case_id, split)
+    except ValueError as exc:
+        return "", "", status_box("error", str(exc)), "", ""
+    hint = "no transcription filter" if not scope else f"transcription {scope}"
+    return (text, scope, status_box("ready", f"{case_id} loaded ({hint}). Click Ask for a fresh answer."),
+            "", "")
 
 
 def on_ask(question, transcription_id, scenario="answered", mode="demo"):
@@ -154,6 +191,16 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
     banner = gr.Markdown(LIVE_BANNER)
 
     mode = gr.Radio(choices=["live", "demo"], value="live", label="Mode")
+    gr.Markdown(
+        "Choose a benchmark example or write your own question. These 50 examples are not "
+        "the full range of questions supported. Only the question and transcription scope "
+        "are loaded—never reference answers or human corrections."
+    )
+    question_set = gr.Radio(choices=QUESTION_SETS, value="custom", label="Question set")
+    example_question = gr.Dropdown(
+        choices=[], value=None, label="Choose a question", filterable=True, interactive=False,
+        info="Search by case ID or words in the question. Both Development and Evaluation are available.",
+    )
     question = gr.Textbox(label="Your question")
     transcription_id = gr.Textbox(
         label="Transcription ID (optional)", value="", placeholder="e.g. 16, or leave blank",
@@ -164,15 +211,24 @@ with gr.Blocks(title="Stapfer evidence explorer", analytics_enabled=False) as de
         value="answered",
         label="Demo scenario (testing only)",
         interactive=False,
+        visible=False,
     )
     ask_button = gr.Button("Ask", variant="primary")
 
-    status = gr.Textbox(label="Status", interactive=False, lines=2)
+    status = gr.Textbox(label="Response status — not a correctness grade", interactive=False, lines=3)
     answer = gr.Textbox(label="Answer", interactive=False)
     source = gr.HTML(label="Original source", show_label=True, container=True, padding=True)
 
     mode.change(on_mode_change, inputs=[mode],
-        outputs=[scenario, banner, status, answer, source], queue=False, api_name=False)
+        outputs=[scenario, banner, status, answer, source], queue=False, api_name=False).then(
+        on_question_mode, inputs=[mode, question_set], outputs=[question_set, example_question],
+        queue=False, api_name=False)
+    question_set.change(on_question_set_change, inputs=[question_set, mode],
+        outputs=[example_question, question, transcription_id, status, answer, source],
+        queue=False, api_name="choose_question_set")
+    example_question.input(on_question_select, inputs=[example_question, question_set, mode],
+        outputs=[question, transcription_id, status, answer, source],
+        queue=False, api_name="choose_question")
     ask_button.click(clear_response, inputs=[mode], outputs=[banner, status, answer, source],
         queue=False, api_name=False).then(
         on_ask,

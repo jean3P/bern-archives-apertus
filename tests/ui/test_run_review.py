@@ -287,3 +287,162 @@ def test_unsaved_edits_block_navigation_until_saved_or_discarded(run_dir):
                                  "col_value": [], "selected": True})
     assert on_table_select(False, click) == "SYN-02"
     assert on_table_select(True, click) != "SYN-02"
+
+
+def test_load_restores_latest_export_decisions_notes_and_suggestions(run_dir, exports):
+    run = load_run(run_dir)
+    original = inventory(run_dir)
+    older = export_session(run, {}, exports)
+    older.rename(exports / (run_dir.name + "-20260101T000000Z-00000001"))
+    saved = {
+        "SYN-01": make_review(run["cases"][0], "Jean", "Incorrect", "1", "Missing detail", "Fixed answer."),
+        "SYN-02": make_review(run["cases"][1], "Jeni", "Correct", "0", "Supported abstention", ""),
+        "SYN-03": make_review(run["cases"][2], "Jeni", "Incorrect", "0", "Technical failure", ""),
+    }
+    latest = export_session(run, saved, exports)
+    latest = latest.rename(exports / (run_dir.name + "-20260102T000000Z-00000002"))
+    loaded, shown, table, _, restored = on_load(str(run_dir), export_root=exports)
+    assert restored == saved
+    assert loaded["restored_export"] == latest.name
+    assert "Restored saved reviews: 3 of 3" in shown and latest.name in shown
+    assert [row[3] for row in table] == ["Incorrect", "Correct", "Incorrect"]
+    from ui.run_review import on_show_form
+    form = on_show_form(loaded, restored, "SYN-01")
+    assert form[0] == "Incorrect" and form[2:4] == ("Missing detail", "Fixed answer.")
+    assert inventory(run_dir) == original
+
+
+def test_load_preserves_partial_reviews_without_inventing_decisions(run_dir, exports):
+    run = load_run(run_dir)
+    saved = {"SYN-01": make_review(run["cases"][0], "Jean", "Correct", "1", "Checked", "")}
+    export_session(run, saved, exports)
+    _, shown, table, _, restored = on_load(str(run_dir), export_root=exports)
+    assert restored == saved and "Restored saved reviews: 1 of 3" in shown
+    assert [row[3] for row in table] == ["Correct", "Pending", "Pending"]
+
+
+def test_load_rejects_invalid_latest_review_instead_of_hiding_it(run_dir, exports):
+    run = load_run(run_dir)
+    valid = export_session(run, {}, exports)
+    valid.rename(exports / (run_dir.name + "-20260101T000000Z-00000001"))
+    invalid = export_session(run, {}, exports)
+    invalid = invalid.rename(exports / (run_dir.name + "-20260102T000000Z-00000002"))
+    records = [json.loads(line) for line in (invalid / REVIEW_FILE).read_text(encoding="utf-8").splitlines()]
+    records[0]["review_binding"] = "0" * 64
+    (invalid / REVIEW_FILE).write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    before = inventory(exports)
+    loaded, shown, table, _, reviews = on_load(str(run_dir), export_root=exports)
+    assert loaded is None and table == [] and reviews == {}
+    assert "Could not load run or restore its latest saved review" in shown
+    assert "no older export was silently substituted" in shown
+    assert inventory(exports) == before
+
+
+def test_load_without_export_explicitly_starts_new_pending_review(run_dir, exports):
+    loaded, shown, table, _, reviews = on_load(str(run_dir), export_root=exports)
+    assert loaded["restored_export"] is None and reviews == {}
+    assert "No saved review export was found" in shown
+    assert [row[3] for row in table] == ["Pending", "Pending", "Pending"]
+
+
+def test_review_form_restores_each_decisions_author_without_rewriting_identity(run_dir):
+    from ui.run_review import on_show_form, on_show_reviewer
+    run = load_run(run_dir)
+    reviews = {
+        "SYN-01": make_review(run["cases"][0], "Jeni", "Correct", "1", "Checked", ""),
+        "SYN-02": make_review(run["cases"][1], "Jean (user-authorized assistant amendment)",
+                               "Correct", "0", "Amended", "Suggested wording"),
+    }
+    before = json.dumps(reviews, sort_keys=True)
+    assert on_show_form(run, reviews, "SYN-01")[5] == "Jeni"
+    assert on_show_form(run, reviews, "SYN-02")[5] == "Jean (user-authorized assistant amendment)"
+    assert on_show_reviewer(run, reviews, "SYN-03") == "Not reviewed yet"
+    assert on_show_form(None, {}, None)[5] == ""
+    assert json.dumps(reviews, sort_keys=True) == before
+
+
+def test_restored_author_is_read_only_and_separate_from_new_editors_name(run_dir):
+    from ui.run_review import build_app
+    app = build_app(str(run_dir), runs_root=run_dir.parent)
+    config = app.get_config_file()
+    by_label = {item.get("props", {}).get("label"): item for item in config["components"]}
+    author = by_label["Reviewer of this decision"]
+    editor = by_label["Your name (required only when saving an edit)"]
+    assert author["props"]["interactive"] is False
+    assert not editor["props"].get("value")
+    form_outputs = [item["outputs"] for item in config["dependencies"]
+                    if str(item.get("api_name", "")).startswith("show_form")]
+    assert form_outputs and all(author["id"] in output for output in form_outputs)
+    assert all(editor["id"] not in output for output in form_outputs)
+
+
+def test_declared_institutions_follow_stored_author_without_rewriting_reviews(run_dir):
+    from ui.run_review import on_show_form, on_show_identity
+    run = load_run(run_dir)
+    reviews = {
+        "SYN-01": make_review(run["cases"][0], "Jeni", "Correct", "1", "Checked", ""),
+        "SYN-02": make_review(run["cases"][1], "Jean (user-authorized assistant amendment)",
+                               "Correct", "0", "Amended", "Suggested wording"),
+        "SYN-03": make_review(run["cases"][2], "Jean", "Incorrect", "0", "Failure", ""),
+    }
+    before = json.dumps(reviews, sort_keys=True)
+    assert on_show_identity(run, reviews, "SYN-01") == ("Jeni", "BFH — Berner Fachhochschule")
+    assert on_show_form(run, reviews, "SYN-02")[5:] == (
+        "Jean (user-authorized assistant amendment)", "University of Neuchâtel")
+    assert on_show_form(run, reviews, "SYN-03")[5:] == ("Jean", "University of Neuchâtel")
+    assert on_show_form(None, {}, None)[5:] == ("", "")
+    assert json.dumps(reviews, sort_keys=True) == before
+
+
+def test_unknown_reviewers_are_not_assigned_someone_elses_institution(run_dir):
+    from ui.run_review import on_show_institution
+    run = load_run(run_dir)
+    assert on_show_institution(run, {}, "SYN-01") == "Not reviewed yet"
+    assert on_show_institution(run, {"SYN-01": {"reviewer": "Jean Someone Else"}}, "SYN-01") == "Not specified"
+    assert on_show_institution(None, {}, None) == ""
+
+
+def test_institution_is_read_only_and_updates_with_form_and_save(run_dir):
+    from ui.run_review import build_app
+    app = build_app(str(run_dir), runs_root=run_dir.parent)
+    config = app.get_config_file()
+    by_label = {item.get("props", {}).get("label"): item for item in config["components"]}
+    institution = by_label["Reviewer institution"]
+    editor = by_label["Your name (required only when saving an edit)"]
+    assert institution["props"]["interactive"] is False
+    outputs = [item["outputs"] for item in config["dependencies"]
+               if str(item.get("api_name", "")).startswith(("show_form", "on_show_identity"))]
+    assert outputs and all(institution["id"] in output for output in outputs)
+    assert all(editor["id"] not in output for output in outputs)
+
+
+def test_saved_run_selector_contains_folder_names_not_paths(run_dir):
+    from ui.run_review import build_app
+    app = build_app(str(run_dir), runs_root=run_dir.parent)
+    config = app.get_config_file()
+    selector = next(c["props"] for c in config["components"] if c.get("props", {}).get("label") == "Saved run folder")
+    assert [list(choice) for choice in selector["choices"]] == [[run_dir.name, run_dir.name]]
+    assert selector["value"] == run_dir.name and selector["allow_custom_value"] is False
+    assert str(run_dir.parent) not in json.dumps(selector)
+
+
+def test_folder_name_loads_the_same_sealed_run_and_rejects_path_inputs(run_dir, monkeypatch):
+    import ui.run_review as ui
+    locations = {run_dir.name: str(run_dir)}
+    calls = []
+    sentinel = object()
+    monkeypatch.setattr(ui, "on_load", lambda path, allow: calls.append((path, allow)) or sentinel)
+    assert ui.on_load_folder(run_dir.name, locations, True) is sentinel
+    assert calls == [(str(run_dir), True)]
+    for value in (str(run_dir), "../syn-run", "unknown", None):
+        run, message, table, _, reviews = ui.on_load_folder(value, locations, True)
+        assert run is None and not table and not reviews
+        assert "Choose a saved run folder" in message
+    assert len(calls) == 1
+
+
+def test_duplicate_folder_names_never_silently_select_a_different_run(run_dir, monkeypatch):
+    import ui.run_review as ui
+    monkeypatch.setattr(ui, "discover_runs", lambda *args, **kwargs: ["/first/same", "/second/same"])
+    with pytest.raises(ValueError, match="distinct names"):
+        ui.build_app(runs_root=run_dir.parent)

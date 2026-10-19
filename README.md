@@ -8,6 +8,8 @@ J1 provides the uv project, shared response types, demo fixtures and configurabl
 
 ## Quick start
 
+For the saved-answer dashboard, including separate Hugging Face reviewer accounts, see [review sign-in and testing](docs/REVIEW_SIGN_IN.md). Existing Jean/Jeni reviews remain read-only; new reviewers export separately. Saved run data and private OAuth configuration are not included in Git.
+
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and authenticate with an account that has access to the private repository.
 
 ```bash
