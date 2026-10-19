@@ -2,6 +2,10 @@
 
 An Apertus-powered explorer of the **1799 Stapfer school survey**, built for the University of Bern's **Deciphering Archives with Apertus** challenge. It preserves the edited archival text and lets readers inspect the evidence behind an answer.
 
+## Technical guide
+
+Read the [seven-page technical guide](docs/stapfer-technical-guide.pdf) for the complete architecture, Apertus/Qwen settings, SQL-to-J2 conversion, retrieval and field binding, an actual model input/output example, human-review states and supported-claim counts. It replaces the older Markdown guides in `docs/`; the setup commands below remain the quick-start reference. Draft references are reviewer/evaluator material, not model hints.
+
 The application has two independent pages:
 
 | Page | Local address used in this guide | Purpose |
@@ -29,7 +33,7 @@ uv run --locked python -m scripts.setup
 
 The command generates this installation's random session secret, creates ignored `.env`, `.env.review-oauth` and `.env.compose` with private permissions on Unix, prepares export folders, builds the Docker image and waits for both pages. The generated Compose settings also record the project name and network files, so the manual Compose commands below target this installation. On Windows, also restrict private-file access through your operating system. Inputs are mounted read-only and new account exports remain separate. The bundle is copied locally without rebuilding the corpus, rerunning a benchmark or generating model answers. No model weights are included or downloaded.
 
-The archive is a **gzip-compressed tar**, hence `.tar.gz`, rather than a plain `.tar`. It contains historical model outputs and draft evaluation material, not newly verified truth. SHA-256 checks cover the archive and every file, followed by the existing dataset, run-seal and review-binding validators. Unsafe paths, links, duplicates and mismatched existing files are rejected; matching files are reused. A fresh install needs roughly 1 GiB free for unpacking/staging in addition to Docker's storage. Existing private settings and personal reviews are not in the bundle and are never replaced. See [bundle contents and attribution](docs/DATA_BUNDLE.md).
+The archive is a **gzip-compressed tar**, hence `.tar.gz`, rather than a plain `.tar`. It contains historical model outputs and draft evaluation material, not newly verified truth. SHA-256 checks cover the archive and every file, followed by the existing dataset, run-seal and review-binding validators. Unsafe paths, links, duplicates and mismatched existing files are rejected; matching files are reused. A fresh install needs roughly 1 GiB free for unpacking/staging in addition to Docker's storage. Existing private settings and personal reviews are not in the bundle and are never replaced. See [the technical guide, page 7](docs/stapfer-technical-guide.pdf#page=7) for contents, provenance and rights. Historical documentation inside sealed run snapshots is deliberately unchanged.
 
 For an explicit archive import (including an already configured checkout):
 
@@ -162,7 +166,7 @@ uv run --locked python -m core.dataset_cli build --source data/raw/stapferappdb_
 uv run --locked python -m core.dataset_cli verify --data-dir data/derived/j2-full
 ```
 
-If you already have a completed output, verify it instead of rebuilding or overwriting it. Details and the public-field policy are in [J2 data commands](docs/J2.md).
+If you already have a completed output, verify it instead of rebuilding or overwriting it. Details and the public-field policy are in [the technical guide, page 3](docs/stapfer-technical-guide.pdf#page=3).
 
 Copy `.env.example` to an ignored file named `.env`, using your file manager or shell. Set the endpoint, model ID and completed dataset directory:
 
@@ -180,7 +184,7 @@ The address is an example: use your own local endpoint, private connection or HT
 uv run --locked python -m core.health
 ```
 
-The service must expose `/v1/models` and `/v1/chat/completions` and serve the configured model ID. LIVE uses the existing `apertus-qualified` / `bound` answering method; it does not replay benchmark answers. See [portable model setup](docs/SETUP.md).
+The service must expose `/v1/models` and `/v1/chat/completions` and serve the configured model ID. LIVE uses the existing `apertus-qualified` / `bound` answering method; it does not replay benchmark answers. See [the technical guide, pages 2 and 4-5](docs/stapfer-technical-guide.pdf#page=2) for model settings, retrieval and the actual model inputs.
 
 ## 3 Configure reviewer sign-in
 
@@ -300,7 +304,7 @@ These commands operate on this Compose project, not an independently managed mod
 
 In **LIVE**, choose Development/Evaluation for a searchable example or enter a custom question. The selector loads only question text and transcription scope, not expected answers or human suggestions. Click **Ask**, read the answer, then inspect its original evidence and citation. **Answer produced — not human-reviewed** is a response status, not a correctness grade. An abstention does not prove the archive lacks the requested information.
 
-In **Saved run review**, sign in, confirm your HF username, choose a run and select **Start / resume my Hugging Face review**. A new account starts Pending. Save each decision, then **Export my reviews separately** before closing or changing runs. Reload/resume to check persistence. Existing Jean/Jeni originals remain read-only; new account exports never replace them. See [review testing instructions](docs/REVIEW_SIGN_IN.md).
+In **Saved run review**, sign in, confirm your HF username, choose a run and select **Start / resume my Hugging Face review**. A new account starts Pending. Save each decision, then **Export my reviews separately** before closing or changing runs. Reload/resume to check persistence. Existing Jean/Jeni originals remain read-only; new account exports never replace them. See [the technical guide, page 6](docs/stapfer-technical-guide.pdf#page=6) for review decisions, supported claims and persistence.
 
 Signed-in users can compare with original judgments after exporting decisions for all cases in that run. Anonymous visitors can already read originals, so this is not a certified blind-review protocol. Historical manual reviews are not retroactively HF-authenticated. Account identity does not verify institutional affiliation or historical accuracy.
 
@@ -328,6 +332,6 @@ The reviewed, exposed 50-question benchmark has these recorded results:
 | Apertus 8B pipeline | 17/20 | 21/30 | 38/50 |
 | Qwen 32B comparator | 18/20 | 29/30 | 47/50 |
 
-These are assisted human-review outcomes, not independent held-out gold or a claim that parameter count alone caused the difference. Apertus's original 40/50 review remains preserved; two later user-authorized amendments give 38/50. Valid quotes can accompany wrong, incomplete or misleading answers. The separate 100-document audit remains pending; question accuracy does not establish the organizer's processed-document target or an inexpensive-hardware result. See [evaluation protocol](docs/J4.md).
+These are assisted human-review outcomes, not independent held-out gold or a claim that parameter count alone caused the difference. Apertus's original 40/50 review remains preserved; two later user-authorized amendments give 38/50. Valid quotes can accompany wrong, incomplete or misleading answers. The separate 100-document audit remains pending; question accuracy does not establish the organizer's processed-document target or an inexpensive-hardware result. See [the technical guide, pages 6-7](docs/stapfer-technical-guide.pdf#page=6).
 
 Our code is **MIT licensed**. This does not relicense model weights, the scholarly Stapfer edition, source excerpts or supplied material. Preserve original IDs, editorial markup, historical units and archival references. The dataset is linked by [opendata.swiss](https://opendata.swiss/en/dataset/stapfer-enquete-schule-in-der-schweiz-1799), with separate [open-use terms](https://opendata.swiss/terms-of-use#terms_open). Never commit credentials, raw/derived data, internal contributor details or private review exports.
