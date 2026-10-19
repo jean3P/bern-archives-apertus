@@ -1,0 +1,11 @@
+# Native Linux only: allow LIVE to reach a model/tunnel listening only on host loopback.
+# Use with Compose 2.24.4+ and -f compose.yaml -f compose.host-network.yaml.
+services:
+  live:
+    network_mode: host
+    ports: !reset []
+    command: ["python", "app.py", "--host", "127.0.0.1", "--port", "${BERN_LIVE_PORT:-17860}"]
+    environment:
+      BERN_APERTUS_BASE_URL: "${BERN_DOCKER_MODEL_URL:-http://127.0.0.1:8010/v1}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${BERN_LIVE_PORT:-17860}/config',timeout=3).close()"]

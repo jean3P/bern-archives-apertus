@@ -35,7 +35,13 @@ The real provider redirect has been checked. A successful consent, return and ac
 
 Obtain the completed saved run folders separately and set `--runs-root` to their parent directory. Historical baseline exports belong in this checkout's ignored `runs/review-exports/`. Do not commit either collection.
 
-For real sign-in, register an OAuth application with callback `http://127.0.0.1:17863/auth/huggingface/callback` (or your actual HTTPS callback), using a public client without a client secret. Create an ignored, private `.env.review-oauth` in the project root:
+For real sign-in, register an OAuth application with callback `http://127.0.0.1:17863/auth/huggingface/callback` (or your actual HTTPS callback), using a public client without a client secret. Register it under **Redirect URIs** in HF settings. Generate the ignored private configuration without printing its session secret:
+
+```bash
+uv run --locked python -m scripts.configure_review --client-id YOUR_PUBLIC_CLIENT_ID
+```
+
+The helper refuses to overwrite an existing file. Edit your own private `.env.review-oauth` locally if changing settings; it contains:
 
 ```dotenv
 BERN_REVIEW_HF_CLIENT_ID=your_registered_public_client_id
@@ -43,15 +49,17 @@ BERN_REVIEW_HF_REDIRECT_URI=http://127.0.0.1:17863/auth/huggingface/callback
 BERN_REVIEW_SESSION_SECRET=your_locally_generated_random_secret_at_least_32_characters
 ```
 
-Generate a cryptographically random session secret locally. Never send it through chat or commit it; restrict the file to its owner. On Unix, use `chmod 600 .env.review-oauth`. A server restart signs users out but does not remove their exports.
+Never send the generated secret through chat or commit it; restrict the file to its owner. The helper creates owner-only permissions on Unix; also restrict access through your operating system on Windows. A server restart signs users out but does not remove their exports.
 
 ```bash
 uv run --locked --group review-auth python review_app.py \
   --runs-root /path/to/saved/runs \
-  --allow-evaluation --port 7863
+  --allow-evaluation --port 17863
 ```
 
 Open the dashboard at the address served by your private connection. If forwarding ports, the browser's callback address must reach that same process. Register the exact callback host/path: `localhost` and `127.0.0.1` are different hosts.
+
+For a personal-computer installation, open `http://127.0.0.1:17863/` directly; no SSH is needed. The [main README](../README.md) covers both pages and the optional two-service Docker Compose launch.
 
 Without OAuth configuration, the dashboard offers read-only original reviews and disables sign-in; typing a name cannot authorize a write. Account exports live under ignored `runs/reviewer-exports/<hashed HF subject>/`, outside original exports. Run names—not absolute storage paths—appear in the selector.
 
