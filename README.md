@@ -4,7 +4,7 @@ An Apertus-powered explorer of the **1799 Stapfer school survey**, built for the
 
 ## Technical guide
 
-Read the [seven-page technical guide](docs/stapfer-technical-guide.pdf) for the complete architecture, Apertus/Qwen settings, SQL-to-J2 conversion, retrieval and field binding, an actual model input/output example, human-review states and supported-claim counts. It replaces the older Markdown guides in `docs/`; the setup commands below remain the quick-start reference. Draft references are reviewer/evaluator material, not model hints.
+Read the [seven-page technical guide](docs/stapfer-technical-guide.pdf) for the complete architecture, Apertus/Qwen settings, SQL-to-dataset conversion, retrieval and field binding, an actual model input/output example, human-review states and supported-claim counts. It replaces the older Markdown guides in `docs/`; the setup commands below remain the quick-start reference. Draft references are reviewer/evaluator material, not model hints.
 
 The application has two independent pages:
 
