@@ -40,7 +40,7 @@ uv run python -m core.health --generate --out runs/connection-smoke.json
 
 Previous receipts are not overwritten. This is a small connection prompt, not an archival question-answering evaluation.
 
-Model deployment is managed separately by its operator. The optional service utility in `scripts/` is not part of portable application installation and needs operator-specific configuration. Private infrastructure commands are kept outside the repository documentation.
+Model deployment remains separate and optional. For a new user without weights, `uv run --locked python -m scripts.setup_apertus` downloads or reuses the pinned checkpoint and prepares ignored `.env.apertus` settings; it does not start a model or modify existing web settings. Read the [main README's model setup](../README.md#download-apertus-and-optionally-serve-it-locally) for HF access/login, disk/GPU requirements and the explicit `compose.apertus.yaml` launch. A remote endpoint remains valid. The older `scripts.serve_apertus` operator utility is unchanged and is not the portable first-run command.
 
 ## Continue development
 

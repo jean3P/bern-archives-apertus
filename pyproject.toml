@@ -9,6 +9,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "python-dotenv>=1,<2",
   "gradio>=5,<7",
+  "huggingface-hub==2.2.0",
 ]
 
 [dependency-groups]

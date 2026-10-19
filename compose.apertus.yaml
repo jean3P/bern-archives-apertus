@@ -1,0 +1,58 @@
+# Optional local model server, separate from compose.yaml's two CPU web clients.
+# Start only after scripts.setup_apertus prepares .env.apertus and the pinned checkpoint.
+services:
+  apertus:
+    image: ghcr.io/swiss-ai/vllm_apertus_1.5_release@sha256:d85533f251c8272218ae2e519510836376e5a335b44f2204f193018e37753bc6
+    entrypoint: ["vllm"]
+    command:
+      - serve
+      - /model
+      - --served-model-name
+      - swiss-ai/Apertus-v1.5-8B
+      - --dtype
+      - bfloat16
+      - --gpu-memory-utilization
+      - "${BERN_APERTUS_GPU_MEMORY_UTILIZATION:-0.9}"
+      - --cpu-offload-gb
+      - "0"
+      - --max-model-len
+      - "8192"
+      - --max-num-seqs
+      - "1"
+      - --generation-config
+      - vllm
+      - --limit-mm-per-prompt
+      - '{"image":{"count":1,"width":1024,"height":1024},"video":0,"audio":0}'
+      - --enforce-eager
+      - --chat-template-content-format
+      - string
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      VLLM_USE_V2_MODEL_RUNNER: "0"
+    ports:
+      - "127.0.0.1:${BERN_APERTUS_PORT:-8010}:8000"
+    volumes:
+      - type: bind
+        source: "${BERN_APERTUS_SNAPSHOT:?Run scripts.setup_apertus first}"
+        target: /model
+        read_only: true
+        bind:
+          create_host_path: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${BERN_APERTUS_GPU:-0}"]
+              capabilities: [gpu]
+    shm_size: 8gb
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/models',timeout=5).close()"]
+      interval: 10s
+      timeout: 6s
+      start_period: 60s
+      retries: 60
